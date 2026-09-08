@@ -8,7 +8,9 @@ type DeepSeekMessage = {
 type DeepSeekChoice = {
   message?: {
     content?: string;
+    reasoning_content?: string;
   };
+  finish_reason?: string;
 };
 
 type DeepSeekResponse = {
@@ -69,7 +71,7 @@ function buildMessages(payload: Record<string, unknown>): DeepSeekMessage[] {
     {
       role: 'system',
       content:
-        '你是一个情侣吵架后帮助双方和好的中文情绪急救智能体。你不做心理诊断，不评判谁对谁错，不鼓励操控、冷暴力、威胁或反复纠缠。你的目标是先降温，再把刺人的表达翻译成真实需要，并给出温柔、可执行的和好建议。输出必须是严格 JSON，不要 Markdown，不要额外解释。',
+        '你是一个情侣吵架后帮助双方和好的中文情绪急救智能体。你不做心理诊断，不评判谁对谁错，不鼓励操控、冷暴力、威胁或反复纠缠。你的目标是先降温，再把刺人的表达翻译成真实需要，并给出温柔、可执行的和好建议。输出必须是严格 json 对象，不要 Markdown，不要额外解释。示例 json：{"sharedCore":"你们都还在乎彼此，只是表达在情绪里变硬了。","trigger":"沟通节奏不一致。","needs":"一方想被理解，一方需要空间。","repairAdvice":"先承认情绪，再表达在乎。","shortReply":"我不想和你冷着，我们慢慢说好吗？","sincereReply":"刚才我语气不好，但我真的很在乎你。","cuteReply":"我刚才有点笨笨的，可以重新好好说吗？","nextStep":"先休息十分钟，再发一句软话。"}',
     },
     {
       role: 'user',
@@ -104,6 +106,42 @@ function buildMessages(payload: Record<string, unknown>): DeepSeekMessage[] {
   ];
 }
 
+async function callDeepSeek(apiKey: string, model: string, messages: DeepSeekMessage[], attempt: number) {
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      thinking: { type: 'disabled' },
+      temperature: 0.7,
+      max_tokens: 1200,
+      response_format: { type: 'json_object' },
+      stream: false,
+    }),
+  });
+
+  const data = await response.json() as DeepSeekResponse;
+  const choice = data.choices?.[0];
+  const contentLength = choice?.message?.content?.length ?? 0;
+
+  console.info('reconcile-agent.deepseek-response', {
+    attempt,
+    model,
+    ok: response.ok,
+    status: response.status,
+    contentLength,
+    finishReason: choice?.finish_reason ?? null,
+    hasReasoningContent: Boolean(choice?.message?.reasoning_content),
+    hasError: Boolean(data.error),
+  });
+
+  return { response, data, content: choice?.message?.content ?? '' };
+}
+
 const handler = async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers });
@@ -124,34 +162,36 @@ const handler = async (req: Request) => {
   }
 
   const model = Netlify.env.get('DEEPSEEK_MODEL') || 'deepseek-v4-flash';
-  const response = await fetch('https://api.deepseek.com/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: buildMessages(payload),
-      temperature: 0.7,
-      max_tokens: 1200,
-      response_format: { type: 'json_object' },
-    }),
-  });
+  const messages = buildMessages(payload);
+  let { response, data, content } = await callDeepSeek(apiKey, model, messages, 1);
 
-  const data = await response.json() as DeepSeekResponse;
+  if (response.ok && !content) {
+    console.warn('reconcile-agent.empty-content-retry', { model });
+    messages[1] = {
+      ...messages[1],
+      content: `${messages[1].content}\n\n请务必只返回一个非空 json 对象，不能返回空 content。`,
+    };
+    ({ response, data, content } = await callDeepSeek(apiKey, model, messages, 2));
+  }
+
   if (!response.ok) {
+    console.error('reconcile-agent.deepseek-error', {
+      model,
+      status: response.status,
+      message: data.error?.message || 'DeepSeek API 调用失败',
+    });
     return json({ error: data.error?.message || 'DeepSeek API 调用失败' }, { status: response.status });
   }
 
-  const content = data.choices?.[0]?.message?.content;
   if (!content) {
+    console.error('reconcile-agent.empty-content-final', { model });
     return json({ error: '智能体没有返回内容，请稍后再试。' }, { status: 502 });
   }
 
   try {
     return json(extractJSON(content));
   } catch {
+    console.error('reconcile-agent.invalid-json', { model, contentLength: content.length });
     return json({ error: '智能体返回格式暂时无法解析，请再试一次。' }, { status: 502 });
   }
 };
