@@ -27,9 +27,21 @@ type SecretMessage = {
   meetingLabel?: string;
 };
 
+type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
+
+type ReconcileChatMessage = {
+  id: string;
+  role: ReconcileRoomRole;
+  title?: string;
+  body: string;
+  action?: string;
+  createdAt: string;
+};
+
 type SharedMemoryData = {
   events: Anniversary[];
   messages: SecretMessage[];
+  reconcileChats: ReconcileChatMessage[];
   updatedAt?: string;
 };
 
@@ -117,6 +129,28 @@ function sanitizeMessages(value: unknown): SecretMessage[] {
   });
 }
 
+function sanitizeReconcileChats(value: unknown): ReconcileChatMessage[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(-600).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const role = item.role === 'userB' ? 'userB' : item.role === 'bot' ? 'bot' : 'userA';
+    const body = sanitizeText(item.body, '', 4000);
+    if (!body) return [];
+
+    return [
+      {
+        id: sanitizeText(item.id, crypto.randomUUID(), 80),
+        role,
+        title: sanitizeText(item.title, role === 'bot' ? '桃桃' : '', 40) || undefined,
+        body,
+        action: sanitizeText(item.action, '', 800) || undefined,
+        createdAt: sanitizeText(item.createdAt, new Date().toISOString(), 30),
+      },
+    ];
+  });
+}
+
 async function readSpace(space: string) {
   const store = getStore({ name: 'love-map-shared', consistency: 'strong' });
   const data = await store.get(`spaces/${space}.json`, { type: 'json' });
@@ -127,6 +161,7 @@ async function readSpace(space: string) {
       space,
       events: [],
       messages: [],
+      reconcileChats: [],
       updatedAt: null,
     };
   }
@@ -136,6 +171,7 @@ async function readSpace(space: string) {
     space,
     events: sanitizeEvents(data.events),
     messages: sanitizeMessages(data.messages),
+    reconcileChats: sanitizeReconcileChats(data.reconcileChats),
     updatedAt: sanitizeText(data.updatedAt, '', 40) || null,
   };
 }
@@ -149,6 +185,7 @@ async function writeSpace(space: string, payload: unknown) {
   const data: SharedMemoryData = {
     events: sanitizeEvents(payload.events),
     messages: sanitizeMessages(payload.messages),
+    reconcileChats: sanitizeReconcileChats(payload.reconcileChats),
     updatedAt: new Date().toISOString(),
   };
 

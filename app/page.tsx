@@ -36,6 +36,7 @@ type SharedMemoryData = {
   space?: string;
   events: Anniversary[];
   messages: SecretMessage[];
+  reconcileChats?: ReconcileChatMessage[];
   updatedAt?: string | null;
 };
 type ReconcileResult = {
@@ -54,18 +55,22 @@ type ReconcileResult = {
   repairPlan: string;
   nextStep: string;
 };
+type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
 type ReconcileChatMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: ReconcileRoomRole;
   title?: string;
   body: string;
   action?: string;
+  createdAt: string;
 };
 
 const storageKey = 'love-map-anniversaries-v2';
 const messageStorageKey = 'love-map-secret-messages-v1';
+const reconcileChatStorageKey = 'love-map-reconcile-chat-v1';
 const spaceStorageKey = 'love-map-space-code-v1';
 const defaultSpaceCode = 'dadata-xiaoxiao';
+const botName = '桃桃';
 
 const starterEvents: Anniversary[] = [
   {
@@ -129,6 +134,16 @@ const starterMessages: SecretMessage[] = [
     createdAt: '2026-08-30T12:08',
     deliveryMode: 'anniversary',
     anniversaryId: 'anniversary-one',
+  },
+];
+
+const starterReconcileChats: ReconcileChatMessage[] = [
+  {
+    id: 'bot-welcome',
+    role: 'bot',
+    title: botName,
+    body: '我在这里陪你们慢慢说。你们可以切换用户 A / 用户 B 发言；聊到一半时，点“桃桃总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。',
+    createdAt: '2026-08-30T12:18',
   },
 ];
 
@@ -228,15 +243,20 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(() => new Date().getTime());
   const [composeOpen, setComposeOpen] = useState(false);
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
-  const [fightText, setFightText] = useState('');
-  const [fightTone, setFightTone] = useState<'apology' | 'explain' | 'soft' | 'meet'>('apology');
-  const [fightMood, setFightMood] = useState('委屈');
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
-  const [reconcileView, setReconcileView] = useState<'entry' | 'chat'>('entry');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
-  const [reconcileChatMessages, setReconcileChatMessages] = useState<ReconcileChatMessage[]>([]);
-  const [initialFightText, setInitialFightText] = useState('');
+  const [reconcileChatMessages, setReconcileChatMessages] = useState<ReconcileChatMessage[]>(() => {
+    if (typeof window === 'undefined') return starterReconcileChats;
+
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
+      return stored.length ? stored : starterReconcileChats;
+    } catch {
+      return starterReconcileChats;
+    }
+  });
+  const [reconcileSpeaker, setReconcileSpeaker] = useState<'userA' | 'userB'>('userA');
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
     answer:
       '我能感觉到你不是单纯想争输赢，而是希望自己的感受被认真看见。现在最重要的不是立刻讲清所有道理，而是先把语气降下来，让对方知道你还想靠近。\n\n你可以先发一句：“我刚才情绪有点满，但我不是想和你吵。我其实很在乎你，也想好好听你说。”如果对方愿意回应，再慢慢聊刚才真正让你难过的点。',
@@ -267,6 +287,10 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
+    window.localStorage.setItem(reconcileChatStorageKey, JSON.stringify(reconcileChatMessages));
+  }, [reconcileChatMessages]);
+
+  useEffect(() => {
     window.localStorage.setItem(spaceStorageKey, spaceCode);
   }, [spaceCode]);
 
@@ -293,6 +317,7 @@ export default function Home() {
         if (!payload.empty) {
           setEvents(payload.events);
           setMessages(payload.messages);
+          setReconcileChatMessages(payload.reconcileChats?.length ? payload.reconcileChats : starterReconcileChats);
           setSelectedId(payload.events[0]?.id ?? starterEvents[0].id);
         }
 
@@ -327,7 +352,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ events, messages }),
+        body: JSON.stringify({ events, messages, reconcileChats: reconcileChatMessages }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('保存失败');
@@ -345,7 +370,30 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, messages, spaceCode]);
+  }, [cloudHydrated, events, messages, reconcileChatMessages, spaceCode]);
+
+  useEffect(() => {
+    if (!cloudHydrated || activeTab !== 'map' || cloudStatus === 'saving') return;
+
+    const timer = window.setInterval(() => {
+      const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+      fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
+        cache: 'no-store',
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error('共同空间连接失败');
+          return response.json() as Promise<SharedMemoryData>;
+        })
+        .then((payload) => {
+          if (payload.reconcileChats?.length) {
+            setReconcileChatMessages(payload.reconcileChats);
+          }
+        })
+        .catch(() => undefined);
+    }, 6000);
+
+    return () => window.clearInterval(timer);
+  }, [activeTab, cloudHydrated, cloudStatus, spaceCode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().getTime()), 60000);
@@ -545,21 +593,6 @@ export default function Home() {
     setMessages((current) => current.filter((message) => message.id !== id));
   }
 
-  function makeReconcileConversation(result: ReconcileResult, conflict: string): ReconcileChatMessage[] {
-    return [
-      {
-        id: 'initial-user',
-        role: 'user',
-        body: conflict,
-      },
-      {
-        id: 'initial-answer',
-        role: 'assistant',
-        body: result.answer || `${result.sharedCore}\n\n${result.repairAdvice}\n\n可以这样说：${result.sincereReply}`,
-      },
-    ];
-  }
-
   async function requestReconcileAnalysis(conflict: string) {
     const response = await fetch('/api/reconcile-agent', {
       method: 'POST',
@@ -568,8 +601,8 @@ export default function Home() {
       },
       body: JSON.stringify({
         conflict,
-        tone: fightTone,
-        mood: fightMood,
+        tone: 'soft',
+        mood: '想和好',
         events: events.slice(0, 12).map((item) => ({
           title: item.title,
           date: item.date,
@@ -613,54 +646,50 @@ export default function Home() {
     return nextResult;
   }
 
-  async function analyzeFight(event: FormEvent<HTMLFormElement>) {
+  function sendReconcileMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedText = fightText.trim();
-    if (!trimmedText) {
-      setAgentError('先写一点刚才发生了什么，智能体才知道从哪里开始帮你们。');
+    const body = reconcileChatInput.trim();
+    if (!body) return;
+    setAgentError('');
+    setReconcileChatMessages((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        role: reconcileSpeaker,
+        body,
+        createdAt: toDateTimeLocal(new Date()),
+      },
+    ]);
+    setReconcileChatInput('');
+  }
+
+  async function summarizeReconcileChat() {
+    const humanMessages = reconcileChatMessages.filter((message) => message.role !== 'bot');
+    if (!humanMessages.length || agentLoading) {
+      setAgentError('先让用户 A 和用户 B 说几句，桃桃才知道怎么帮你们。');
       return;
     }
 
-    setAgentLoading(true);
-    setAgentError('');
+    const transcript = humanMessages
+      .slice(-40)
+      .map((message) => `${message.role === 'userA' ? '用户A' : '用户B'}：${message.body}`)
+      .join('\n');
 
-    try {
-      const result = await requestReconcileAnalysis(trimmedText);
-      setInitialFightText(trimmedText);
-      setReconcileChatMessages(makeReconcileConversation(result, trimmedText));
-      setReconcileView('chat');
-    } catch (error) {
-      setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
-    } finally {
-      setAgentLoading(false);
-    }
-  }
-
-  async function askReconcileFollowup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = reconcileChatInput.trim();
-    if (!question || agentLoading) return;
-
-    const userMessage: ReconcileChatMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      body: question,
-    };
-    setReconcileChatMessages((current) => [...current, userMessage]);
-    setReconcileChatInput('');
     setAgentLoading(true);
     setAgentError('');
 
     try {
       const result = await requestReconcileAnalysis(
-        `原始吵架经过：${initialFightText || fightText}\n\n当前想继续问 AI：${question}`,
+        `下面是情侣吵架聊天室里的对话。请你作为第三方智能调停机器人，像自然聊天一样总结双方真正想表达的内容，指出误会可能在哪里，给出现在最适合的一步，并生成一段其中一方可以温柔发给对方的话。\n\n${transcript}`,
       );
       setReconcileChatMessages((current) => [
         ...current,
         {
           id: crypto.randomUUID(),
-          role: 'assistant',
+          role: 'bot',
+          title: botName,
           body: result.answer || result.repairAdvice,
+          createdAt: toDateTimeLocal(new Date()),
         },
       ]);
     } catch (error) {
@@ -668,6 +697,12 @@ export default function Home() {
     } finally {
       setAgentLoading(false);
     }
+  }
+
+  function resetReconcileChat() {
+    setReconcileChatMessages(starterReconcileChats);
+    setReconcileChatInput('');
+    setAgentError('');
   }
 
   const pageTitle =
@@ -929,125 +964,82 @@ export default function Home() {
           </section>
         ) : activeTab === 'map' ? (
           <section className="reconcile-view" aria-label="情侣吵架分析智能体">
-            {reconcileView === 'entry' ? (
-              <form className="reconcile-entry-card" onSubmit={analyzeFight}>
-                <section className="repair-stage" aria-label="三十秒降温">
-                  <div className="repair-stage-copy">
-                    <span>先抱抱情绪</span>
-                    <h2>30 秒降温</h2>
-                    <p>把话说出口之前，先让情绪慢下来。</p>
-                  </div>
-                  <div className="breathing-circle compact" aria-hidden="true">
-                    <strong>30</strong>
-                    <em>秒</em>
-                  </div>
-                </section>
-
-                <section className="repair-panel" aria-label="和好分析入口">
-                  <div className="mood-chip-grid" aria-label="当前情绪">
-                    {['委屈', '生气', '想哭', '想和好'].map((mood) => (
-                      <button
-                        key={mood}
-                        type="button"
-                        className={fightMood === mood ? 'active' : ''}
-                        onClick={() => setFightMood(mood)}
-                      >
-                        {mood}
-                      </button>
-                    ))}
-                  </div>
-
-                  <label>
-                    刚才发生了什么
-                    <textarea
-                      value={fightText}
-                      onChange={(event) => setFightText(event.target.value)}
-                      placeholder="可以只写几句话：我现在很委屈，因为刚才他说话很冲，我其实只是想被理解。"
-                    />
-                  </label>
-
-                  <div className="tone-grid" aria-label="想让智能体帮什么">
-                    {([
-                      ['apology', '我该先道歉吗'],
-                      ['explain', '帮我解释清楚'],
-                      ['soft', '把话说软一点'],
-                      ['meet', '约 TA 好好聊'],
-                    ] as const).map(([tone, label]) => (
-                      <button
-                        key={tone}
-                        type="button"
-                        className={fightTone === tone ? 'active' : ''}
-                        onClick={() => setFightTone(tone)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {agentError && <p className="agent-error">{agentError}</p>}
-                  <button className="agent-button" type="submit" disabled={agentLoading}>
-                    {agentLoading ? '正在进入 AI 对话...' : '开始分析'}
-                  </button>
-                </section>
-              </form>
-            ) : (
-              <section className="reconcile-chat-page" aria-label="AI 和好对话">
-                <div className="chat-topbar">
-                  <button type="button" onClick={() => setReconcileView('entry')} aria-label="返回和好入口">
-                    ‹
-                  </button>
-                  <div>
-                    <span>AI 正在陪你们降温</span>
-                    <h2>和好对话</h2>
-                  </div>
+            <section className="reconcile-chat-page" aria-label="和好三方聊天室">
+              <section className="repair-stage chat-stage" aria-label="三十秒降温">
+                <div className="repair-stage-copy">
+                  <span>{botName} 在房间里</span>
+                  <h2>慢慢说</h2>
+                  <p>用户 A 和用户 B 都可以发言，需要时让 {botName} 总结。</p>
                 </div>
-
-                <article className="shared-core-card chat-summary">
-                  <span>现在的你：{fightMood}</span>
-                  <strong>{reconcileResult.sharedCore}</strong>
-                </article>
-
-                <div className="chat-thread" aria-live="polite">
-                  {reconcileChatMessages.map((message) => (
-                    <article className={`chat-bubble ${message.role}`} key={message.id}>
-                      {message.title && <span>{message.title}</span>}
-                      <p>{message.body}</p>
-                      {message.action && <em>{message.action}</em>}
-                    </article>
-                  ))}
-                  {agentLoading && (
-                    <article className="chat-bubble assistant typing">
-                      <span>AI 正在想</span>
-                      <p>先把刺人的话翻译成真正想被看见的需要。</p>
-                    </article>
-                  )}
+                <div className="breathing-circle compact" aria-hidden="true">
+                  <strong>30</strong>
+                  <em>秒</em>
                 </div>
+              </section>
 
-                <div className="suggestion-row" aria-label="快捷追问">
-                  {['怎么开口道歉', '帮我换一句更软的', '怎么约 TA 见面聊'].map((question) => (
+              <div className="room-toolbar" aria-label="聊天室操作">
+                <div className="speaker-switch" aria-label="当前发言人">
+                  {([
+                    ['userA', '用户 A'],
+                    ['userB', '用户 B'],
+                  ] as const).map(([role, label]) => (
                     <button
-                      key={question}
+                      key={role}
                       type="button"
-                      onClick={() => setReconcileChatInput(question)}
+                      className={reconcileSpeaker === role ? 'active' : ''}
+                      onClick={() => setReconcileSpeaker(role)}
                     >
-                      {question}
+                      {label}
                     </button>
                   ))}
                 </div>
+                <button className="summarize-button" type="button" onClick={summarizeReconcileChat} disabled={agentLoading}>
+                  {agentLoading ? `${botName} 正在想` : `${botName} 总结一下`}
+                </button>
+              </div>
 
-                {agentError && <p className="agent-error">{agentError}</p>}
-                <form className="chat-input-bar" onSubmit={askReconcileFollowup}>
-                  <input
-                    value={reconcileChatInput}
-                    onChange={(event) => setReconcileChatInput(event.target.value)}
-                    placeholder="继续问 AI：怎么和好、怎么说、怎么收尾..."
-                    aria-label="继续向 AI 提问"
-                  />
-                  <button type="submit" disabled={agentLoading || !reconcileChatInput.trim()}>
-                    发送
+              <div className="chat-thread room-thread" aria-live="polite">
+                {reconcileChatMessages.map((message) => (
+                  <article className={`chat-bubble ${message.role}`} key={message.id}>
+                    <span>
+                      {message.role === 'userA' ? '用户 A' : message.role === 'userB' ? '用户 B' : message.title || botName}
+                    </span>
+                    <p>{message.body}</p>
+                  </article>
+                ))}
+                {agentLoading && (
+                  <article className="chat-bubble bot typing">
+                    <span>{botName}</span>
+                    <p>我在读你们刚才说的话，先帮你们把情绪和真正想表达的意思分开。</p>
+                  </article>
+                )}
+              </div>
+
+              <div className="suggestion-row" aria-label="快捷输入">
+                {['我现在有点委屈', '我不是不在乎你', '我们能不能慢慢说'].map((text) => (
+                  <button key={text} type="button" onClick={() => setReconcileChatInput(text)}>
+                    {text}
                   </button>
-                </form>
-              </section>
-            )}
+                ))}
+              </div>
+
+              {agentError && <p className="agent-error">{agentError}</p>}
+              <form className="chat-input-bar" onSubmit={sendReconcileMessage}>
+                <input
+                  value={reconcileChatInput}
+                  onChange={(event) => setReconcileChatInput(event.target.value)}
+                  placeholder={`${reconcileSpeaker === 'userA' ? '用户 A' : '用户 B'} 说点什么...`}
+                  aria-label="聊天室发言"
+                />
+                <button type="submit" disabled={!reconcileChatInput.trim()}>
+                  发送
+                </button>
+              </form>
+
+              <button className="clear-room-button" type="button" onClick={resetReconcileChat}>
+                清空并重新聊
+              </button>
+            </section>
           </section>
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="更多设置">
@@ -1067,7 +1059,7 @@ export default function Home() {
                   placeholder="输入你们共同约定的空间码"
                 />
               </label>
-              <small>你和对方使用同一个空间码，就会看到同一份纪念日、悄悄话和时光胶囊。</small>
+              <small>你和对方使用同一个空间码，就会看到同一份纪念日、信件和和好聊天室。</small>
             </article>
 
             <section className="stats-grid" aria-label="记录统计">

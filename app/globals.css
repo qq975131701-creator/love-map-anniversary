@@ -1271,6 +1271,17 @@ select:focus {
   box-shadow: 0 -10px 28px rgba(92, 63, 42, 0.06);
 }
 
+.chat-stage {
+  min-height: 174px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 224, 234, 0.72), rgba(255, 253, 248, 0.94)),
+    rgba(255, 253, 248, 0.94);
+  box-shadow: 0 12px 26px rgba(92, 63, 42, 0.1);
+}
+
 .reconcile-hero {
   position: relative;
   display: grid;
@@ -1634,6 +1645,63 @@ select:focus {
   text-align: left;
 }
 
+.room-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.speaker-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border: 1px solid #f0dce3;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.88);
+  padding: 5px;
+}
+
+.speaker-switch button,
+.summarize-button,
+.clear-room-button {
+  border: 0;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.3;
+}
+
+.speaker-switch button {
+  min-width: 0;
+  background: transparent;
+  color: #907466;
+  padding: 9px 10px;
+}
+
+.speaker-switch button.active {
+  background: #fff;
+  color: var(--pink);
+  box-shadow: 0 8px 16px rgba(92, 63, 42, 0.08);
+}
+
+.summarize-button {
+  background: linear-gradient(135deg, #f06f9f, #e95d8f);
+  color: #fff;
+  padding: 12px 14px;
+  box-shadow: 0 10px 20px rgba(239, 122, 165, 0.22);
+  white-space: nowrap;
+}
+
+.summarize-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.room-thread {
+  min-height: 280px;
+}
+
 .chat-thread {
   display: grid;
   gap: 12px;
@@ -1661,6 +1729,26 @@ select:focus {
   justify-self: start;
 }
 
+.chat-bubble.userA {
+  justify-self: start;
+  border-color: rgba(155, 139, 216, 0.26);
+  background: rgba(248, 245, 255, 0.95);
+}
+
+.chat-bubble.userB {
+  justify-self: end;
+  border-color: rgba(239, 122, 165, 0.18);
+  background: linear-gradient(135deg, #f07ca6, #e96091);
+}
+
+.chat-bubble.bot {
+  justify-self: center;
+  max-width: 96%;
+  border-color: rgba(226, 198, 172, 0.8);
+  background:
+    linear-gradient(135deg, rgba(255, 253, 248, 0.96), rgba(255, 244, 248, 0.94));
+}
+
 .chat-bubble span {
   color: var(--pink);
   font-size: 13px;
@@ -1669,6 +1757,18 @@ select:focus {
 
 .chat-bubble.user span {
   color: rgba(255, 255, 255, 0.82);
+}
+
+.chat-bubble.userA span {
+  color: #8b7bc8;
+}
+
+.chat-bubble.userB span {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.chat-bubble.bot span {
+  color: var(--pink);
 }
 
 .chat-bubble p,
@@ -1684,6 +1784,10 @@ select:focus {
 }
 
 .chat-bubble.user p {
+  color: #fff;
+}
+
+.chat-bubble.userB p {
   color: #fff;
 }
 
@@ -1755,6 +1859,14 @@ select:focus {
 .chat-input-bar button:disabled {
   cursor: wait;
   opacity: 0.55;
+}
+
+.clear-room-button {
+  justify-self: center;
+  border: 1px solid #ead8cc;
+  background: rgba(255, 253, 248, 0.78);
+  color: #9b8273;
+  padding: 10px 14px;
 }
 
 @keyframes breathe-soft {
