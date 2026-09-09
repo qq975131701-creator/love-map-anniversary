@@ -39,6 +39,7 @@ type SharedMemoryData = {
   updatedAt?: string | null;
 };
 type ReconcileResult = {
+  answer: string;
   sharedCore: string;
   trigger: string;
   needs: string;
@@ -237,6 +238,8 @@ export default function Home() {
   const [reconcileChatMessages, setReconcileChatMessages] = useState<ReconcileChatMessage[]>([]);
   const [initialFightText, setInitialFightText] = useState('');
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
+    answer:
+      '我能感觉到你不是单纯想争输赢，而是希望自己的感受被认真看见。现在最重要的不是立刻讲清所有道理，而是先把语气降下来，让对方知道你还想靠近。\n\n你可以先发一句：“我刚才情绪有点满，但我不是想和你吵。我其实很在乎你，也想好好听你说。”如果对方愿意回应，再慢慢聊刚才真正让你难过的点。',
     sharedCore: '你们都想被在乎，只是表达方式在情绪里变硬了。',
     trigger: '沟通节奏不一致，加上期待没有被及时看见。',
     needs: '一方需要被理解，另一方可能需要一点空间和确定感。',
@@ -542,27 +545,17 @@ export default function Home() {
     setMessages((current) => current.filter((message) => message.id !== id));
   }
 
-  function makeReconcileConversation(result: ReconcileResult): ReconcileChatMessage[] {
+  function makeReconcileConversation(result: ReconcileResult, conflict: string): ReconcileChatMessage[] {
     return [
       {
-        id: 'reason',
-        role: 'assistant',
-        title: '我先看到的原因',
-        body: `${result.trigger} ${result.needs}`,
+        id: 'initial-user',
+        role: 'user',
+        body: conflict,
       },
       {
-        id: 'method',
+        id: 'initial-answer',
         role: 'assistant',
-        title: '现在可以怎么做',
-        body: result.repairAdvice,
-        action: result.nextStep,
-      },
-      {
-        id: 'reply',
-        role: 'assistant',
-        title: '可以发给 TA 的话',
-        body: result.sincereReply,
-        action: result.shortReply,
+        body: result.answer || `${result.sharedCore}\n\n${result.repairAdvice}\n\n可以这样说：${result.sincereReply}`,
       },
     ];
   }
@@ -600,6 +593,7 @@ export default function Home() {
     if (!response.ok) throw new Error(payload.error || '智能体暂时没有回应');
 
     const nextResult = {
+      answer: payload.answer || reconcileResult.answer,
       sharedCore: payload.sharedCore || reconcileResult.sharedCore,
       trigger: payload.trigger || reconcileResult.trigger,
       needs: payload.needs || reconcileResult.needs,
@@ -633,7 +627,7 @@ export default function Home() {
     try {
       const result = await requestReconcileAnalysis(trimmedText);
       setInitialFightText(trimmedText);
-      setReconcileChatMessages(makeReconcileConversation(result));
+      setReconcileChatMessages(makeReconcileConversation(result, trimmedText));
       setReconcileView('chat');
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
@@ -666,9 +660,7 @@ export default function Home() {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          title: 'AI 的建议',
-          body: result.repairAdvice,
-          action: result.gentleScript || result.shortReply,
+          body: result.answer || result.repairAdvice,
         },
       ]);
     } catch (error) {

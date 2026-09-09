@@ -1680,6 +1680,7 @@ select:focus {
 
 .chat-bubble p {
   color: #5a463d;
+  white-space: pre-line;
 }
 
 .chat-bubble.user p {
