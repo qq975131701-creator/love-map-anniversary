@@ -42,10 +42,15 @@ type ReconcileResult = {
   sharedCore: string;
   trigger: string;
   needs: string;
+  myNeed: string;
+  partnerNeed: string;
+  avoidNow: string;
+  gentleScript: string;
   repairAdvice: string;
   shortReply: string;
   sincereReply: string;
   cuteReply: string;
+  repairPlan: string;
   nextStep: string;
 };
 
@@ -220,14 +225,20 @@ export default function Home() {
   const [fightMood, setFightMood] = useState('委屈');
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
+  const [fullReportOpen, setFullReportOpen] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
     sharedCore: '你们都想被在乎，只是表达方式在情绪里变硬了。',
     trigger: '沟通节奏不一致，加上期待没有被及时看见。',
     needs: '一方需要被理解，另一方可能需要一点空间和确定感。',
+    myNeed: '你可能想确认自己被认真听见，而不是被一句话带过去。',
+    partnerNeed: 'TA 可能也想被温柔对待，并希望对话不要继续升级。',
+    avoidNow: '先不要翻旧账、连续追问或用冷话试探，对方越紧张越难靠近。',
+    gentleScript: '我现在还有点委屈，但我想先把话说软一点。我们都慢慢讲，我会认真听你。',
     repairAdvice: '先承认情绪，再表达在乎，最后约一个轻松时刻继续聊。',
     shortReply: '我不想和你冷着，我刚才语气不好。我们慢慢说，好吗？',
     sincereReply: '刚才我有点被情绪带着走了，说话可能让你不舒服。其实我很在乎你，也想认真听听你的感受。',
     cuteReply: '我刚才有点笨笨的，但我真的不想和你不开心。可以给我一个重新好好说话的机会吗？',
+    repairPlan: '先各自安静 10 分钟，再发一条软话；如果对方愿意，今晚只聊感受，不急着判定谁对谁错。',
     nextStep: '10 分钟后发一句软话，今晚只确认彼此还在乎，明天再复盘细节。',
   });
   const [mapScale, setMapScale] = useState(1);
@@ -568,12 +579,18 @@ export default function Home() {
         sharedCore: payload.sharedCore || reconcileResult.sharedCore,
         trigger: payload.trigger || reconcileResult.trigger,
         needs: payload.needs || reconcileResult.needs,
+        myNeed: payload.myNeed || reconcileResult.myNeed,
+        partnerNeed: payload.partnerNeed || reconcileResult.partnerNeed,
+        avoidNow: payload.avoidNow || reconcileResult.avoidNow,
+        gentleScript: payload.gentleScript || reconcileResult.gentleScript,
         repairAdvice: payload.repairAdvice || reconcileResult.repairAdvice,
         shortReply: payload.shortReply || reconcileResult.shortReply,
         sincereReply: payload.sincereReply || reconcileResult.sincereReply,
         cuteReply: payload.cuteReply || reconcileResult.cuteReply,
+        repairPlan: payload.repairPlan || reconcileResult.repairPlan,
         nextStep: payload.nextStep || reconcileResult.nextStep,
       });
+      setFullReportOpen(true);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
     } finally {
@@ -932,6 +949,53 @@ export default function Home() {
               <span>慢一点会更好</span>
               <p>{reconcileResult.nextStep}</p>
             </article>
+
+            <section className="full-report-card" aria-label="完整和好分析报告">
+              <button
+                className="report-toggle"
+                type="button"
+                aria-expanded={fullReportOpen}
+                onClick={() => setFullReportOpen((open) => !open)}
+              >
+                <span>
+                  <em>完整分析</em>
+                  <strong>{fullReportOpen ? '收起报告' : '查看完整分析'}</strong>
+                </span>
+                <i aria-hidden="true">{fullReportOpen ? '⌃' : '⌄'}</i>
+              </button>
+
+              {fullReportOpen && (
+                <div className="full-report-body">
+                  {[
+                    ['发生了什么', reconcileResult.trigger],
+                    ['你可能真正想要', reconcileResult.myNeed],
+                    ['TA 可能真正想要', reconcileResult.partnerNeed],
+                    ['现在先别做', reconcileResult.avoidNow],
+                    ['可以怎么说', reconcileResult.gentleScript],
+                    ['30 分钟和好计划', reconcileResult.repairPlan],
+                  ].map(([title, content]) => (
+                    <article className="report-row" key={title}>
+                      <span>{title}</span>
+                      <p>{content}</p>
+                    </article>
+                  ))}
+
+                  <article className="report-row message-variants">
+                    <span>三种可发送的话</span>
+                    {[
+                      ['短句版', reconcileResult.shortReply],
+                      ['认真版', reconcileResult.sincereReply],
+                      ['软软版', reconcileResult.cuteReply],
+                    ].map(([label, content]) => (
+                      <p className="message-variant" key={label}>
+                        <strong>{label}</strong>
+                        {content}
+                      </p>
+                    ))}
+                  </article>
+                </div>
+              )}
+            </section>
           </section>
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="更多设置">

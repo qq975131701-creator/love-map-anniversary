@@ -71,12 +71,12 @@ function buildMessages(payload: Record<string, unknown>): DeepSeekMessage[] {
     {
       role: 'system',
       content:
-        '你是一个情侣吵架后帮助双方和好的中文情绪急救智能体。你不做心理诊断，不评判谁对谁错，不鼓励操控、冷暴力、威胁或反复纠缠。你的目标是先降温，再把刺人的表达翻译成真实需要，并给出温柔、可执行的和好建议。输出必须是严格 json 对象，不要 Markdown，不要额外解释。示例 json：{"sharedCore":"你们都还在乎彼此，只是表达在情绪里变硬了。","trigger":"沟通节奏不一致。","needs":"一方想被理解，一方需要空间。","repairAdvice":"先承认情绪，再表达在乎。","shortReply":"我不想和你冷着，我们慢慢说好吗？","sincereReply":"刚才我语气不好，但我真的很在乎你。","cuteReply":"我刚才有点笨笨的，可以重新好好说吗？","nextStep":"先休息十分钟，再发一句软话。"}',
+        '你是一个情侣吵架后帮助双方和好的中文情绪急救智能体。你不做心理诊断，不评判谁对谁错，不鼓励操控、冷暴力、威胁或反复纠缠。你的目标是先降温，再把刺人的表达翻译成真实需要，并给出温柔、可执行的和好建议。输出必须是严格 json 对象，不要 Markdown，不要额外解释。示例 json：{"sharedCore":"你们都还在乎彼此，只是表达在情绪里变硬了。","trigger":"沟通节奏不一致。","needs":"一方想被理解，一方需要空间。","myNeed":"你想确认自己的感受被认真听见。","partnerNeed":"TA 可能也需要被温柔对待和一点缓冲。","avoidNow":"先不要翻旧账、追问结论或用冷话试探。","gentleScript":"我现在还有点委屈，但我想把话说软一点，我们慢慢讲。","repairAdvice":"先承认情绪，再表达在乎。","shortReply":"我不想和你冷着，我们慢慢说好吗？","sincereReply":"刚才我语气不好，但我真的很在乎你。","cuteReply":"我刚才有点笨笨的，可以重新好好说吗？","repairPlan":"先安静十分钟，再发一条软话；今晚只聊感受，不急着判对错。","nextStep":"先休息十分钟，再发一句软话。"}',
     },
     {
       role: 'user',
       content: JSON.stringify({
-        task: '根据情侣吵架经过，生成降温后的中立理解、快捷建议和一句可发送的和好表达。',
+        task: '根据情侣吵架经过，生成降温后的中立理解、完整复盘、快捷建议和可发送的和好表达。',
         tonePreference: toneMap[tone] || toneMap.apology,
         currentMood: sanitizeText(payload.mood, 20),
         conflict,
@@ -88,15 +88,22 @@ function buildMessages(payload: Record<string, unknown>): DeepSeekMessage[] {
           sharedCore: '先安抚用户当前情绪，再用一句温柔的话概括双方共同在意的核心',
           trigger: '这次争执的导火索，保持中立',
           needs: '双方背后的真实需求，不能责怪任何一方',
+          myNeed: '用户这边可能真正想要被满足的需求，用第二人称表达',
+          partnerNeed: '对方这边可能真正想要被满足的需求，保持善意推测',
+          avoidNow: '此刻先不要做的事，避免升级矛盾',
+          gentleScript: '一段可以照着说的柔和开场白，不超过两句',
           repairAdvice: '此刻最适合做什么，具体、温柔、可执行',
           shortReply: '适合直接发送的短句版',
           sincereReply: '更认真完整的和好消息',
           cuteReply: '稍微可爱一点的和好消息',
+          repairPlan: '未来 30 分钟的和好计划，按时间顺序但写成一句自然的话',
           nextStep: '未来 30 分钟内建议做的一步降温或靠近行动',
         },
         constraints: [
           '全部使用简体中文',
-          '每个字段控制在 90 字以内',
+          'sharedCore、trigger、needs、myNeed、partnerNeed、avoidNow、repairAdvice、nextStep 每个字段控制在 90 字以内',
+          'gentleScript、sincereReply、repairPlan 每个字段控制在 140 字以内',
+          'shortReply 和 cuteReply 每个字段控制在 70 字以内',
           '不要说教',
           '不要输出“你应该分手”这类结论',
           '不要把任何一方描述成坏人',
