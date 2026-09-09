@@ -53,6 +53,13 @@ type ReconcileResult = {
   repairPlan: string;
   nextStep: string;
 };
+type ReconcileChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  title?: string;
+  body: string;
+  action?: string;
+};
 
 const storageKey = 'love-map-anniversaries-v2';
 const messageStorageKey = 'love-map-secret-messages-v1';
@@ -225,7 +232,10 @@ export default function Home() {
   const [fightMood, setFightMood] = useState('委屈');
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
-  const [fullReportOpen, setFullReportOpen] = useState(false);
+  const [reconcileView, setReconcileView] = useState<'entry' | 'chat'>('entry');
+  const [reconcileChatInput, setReconcileChatInput] = useState('');
+  const [reconcileChatMessages, setReconcileChatMessages] = useState<ReconcileChatMessage[]>([]);
+  const [initialFightText, setInitialFightText] = useState('');
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
     sharedCore: '你们都想被在乎，只是表达方式在情绪里变硬了。',
     trigger: '沟通节奏不一致，加上期待没有被及时看见。',
@@ -532,6 +542,83 @@ export default function Home() {
     setMessages((current) => current.filter((message) => message.id !== id));
   }
 
+  function makeReconcileConversation(result: ReconcileResult): ReconcileChatMessage[] {
+    return [
+      {
+        id: 'reason',
+        role: 'assistant',
+        title: '我先看到的原因',
+        body: `${result.trigger} ${result.needs}`,
+      },
+      {
+        id: 'method',
+        role: 'assistant',
+        title: '现在可以怎么做',
+        body: result.repairAdvice,
+        action: result.nextStep,
+      },
+      {
+        id: 'reply',
+        role: 'assistant',
+        title: '可以发给 TA 的话',
+        body: result.sincereReply,
+        action: result.shortReply,
+      },
+    ];
+  }
+
+  async function requestReconcileAnalysis(conflict: string) {
+    const response = await fetch('/api/reconcile-agent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        conflict,
+        tone: fightTone,
+        mood: fightMood,
+        events: events.slice(0, 12).map((item) => ({
+          title: item.title,
+          date: item.date,
+          category: item.category,
+          note: item.note,
+        })),
+        messages: messages.slice(0, 12).map((item) => ({
+          kind: item.kind,
+          title: item.title,
+          body: item.body,
+        })),
+      }),
+    });
+
+    const contentType = response.headers.get('Content-Type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('当前预览没有启动智能体接口。请用 netlify dev 本地联调，或部署到 Netlify 后再测试。');
+    }
+
+    const payload = await response.json() as Partial<ReconcileResult> & { error?: string };
+    if (!response.ok) throw new Error(payload.error || '智能体暂时没有回应');
+
+    const nextResult = {
+      sharedCore: payload.sharedCore || reconcileResult.sharedCore,
+      trigger: payload.trigger || reconcileResult.trigger,
+      needs: payload.needs || reconcileResult.needs,
+      myNeed: payload.myNeed || reconcileResult.myNeed,
+      partnerNeed: payload.partnerNeed || reconcileResult.partnerNeed,
+      avoidNow: payload.avoidNow || reconcileResult.avoidNow,
+      gentleScript: payload.gentleScript || reconcileResult.gentleScript,
+      repairAdvice: payload.repairAdvice || reconcileResult.repairAdvice,
+      shortReply: payload.shortReply || reconcileResult.shortReply,
+      sincereReply: payload.sincereReply || reconcileResult.sincereReply,
+      cuteReply: payload.cuteReply || reconcileResult.cuteReply,
+      repairPlan: payload.repairPlan || reconcileResult.repairPlan,
+      nextStep: payload.nextStep || reconcileResult.nextStep,
+    };
+
+    setReconcileResult(nextResult);
+    return nextResult;
+  }
+
   async function analyzeFight(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedText = fightText.trim();
@@ -544,53 +631,46 @@ export default function Home() {
     setAgentError('');
 
     try {
-      const response = await fetch('/api/reconcile-agent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const result = await requestReconcileAnalysis(trimmedText);
+      setInitialFightText(trimmedText);
+      setReconcileChatMessages(makeReconcileConversation(result));
+      setReconcileView('chat');
+    } catch (error) {
+      setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
+    } finally {
+      setAgentLoading(false);
+    }
+  }
+
+  async function askReconcileFollowup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = reconcileChatInput.trim();
+    if (!question || agentLoading) return;
+
+    const userMessage: ReconcileChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      body: question,
+    };
+    setReconcileChatMessages((current) => [...current, userMessage]);
+    setReconcileChatInput('');
+    setAgentLoading(true);
+    setAgentError('');
+
+    try {
+      const result = await requestReconcileAnalysis(
+        `原始吵架经过：${initialFightText || fightText}\n\n当前想继续问 AI：${question}`,
+      );
+      setReconcileChatMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          title: 'AI 的建议',
+          body: result.repairAdvice,
+          action: result.gentleScript || result.shortReply,
         },
-        body: JSON.stringify({
-          conflict: trimmedText,
-          tone: fightTone,
-          mood: fightMood,
-          events: events.slice(0, 12).map((item) => ({
-            title: item.title,
-            date: item.date,
-            category: item.category,
-            note: item.note,
-          })),
-          messages: messages.slice(0, 12).map((item) => ({
-            kind: item.kind,
-            title: item.title,
-            body: item.body,
-          })),
-        }),
-      });
-
-      const contentType = response.headers.get('Content-Type') || '';
-      if (!contentType.includes('application/json')) {
-        throw new Error('当前预览没有启动智能体接口。请用 netlify dev 本地联调，或部署到 Netlify 后再测试。');
-      }
-
-      const payload = await response.json() as Partial<ReconcileResult> & { error?: string };
-      if (!response.ok) throw new Error(payload.error || '智能体暂时没有回应');
-
-      setReconcileResult({
-        sharedCore: payload.sharedCore || reconcileResult.sharedCore,
-        trigger: payload.trigger || reconcileResult.trigger,
-        needs: payload.needs || reconcileResult.needs,
-        myNeed: payload.myNeed || reconcileResult.myNeed,
-        partnerNeed: payload.partnerNeed || reconcileResult.partnerNeed,
-        avoidNow: payload.avoidNow || reconcileResult.avoidNow,
-        gentleScript: payload.gentleScript || reconcileResult.gentleScript,
-        repairAdvice: payload.repairAdvice || reconcileResult.repairAdvice,
-        shortReply: payload.shortReply || reconcileResult.shortReply,
-        sincereReply: payload.sincereReply || reconcileResult.sincereReply,
-        cuteReply: payload.cuteReply || reconcileResult.cuteReply,
-        repairPlan: payload.repairPlan || reconcileResult.repairPlan,
-        nextStep: payload.nextStep || reconcileResult.nextStep,
-      });
-      setFullReportOpen(true);
+      ]);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
     } finally {
@@ -857,145 +937,125 @@ export default function Home() {
           </section>
         ) : activeTab === 'map' ? (
           <section className="reconcile-view" aria-label="情侣吵架分析智能体">
-            <section className="reconcile-hero">
-              <span className="reconcile-hero-image" aria-hidden="true" />
-              <div>
-                <p>再大的争吵，也抵不过我还是想和你在一起</p>
-                <h2>和好智能体</h2>
-                <span>先降温，再好好说。这里不会评判谁对谁错，只帮你们找回靠近的方式。</span>
-              </div>
-            </section>
+            {reconcileView === 'entry' ? (
+              <form className="reconcile-entry-card" onSubmit={analyzeFight}>
+                <section className="repair-stage" aria-label="三十秒降温">
+                  <div className="repair-stage-copy">
+                    <span>先抱抱情绪</span>
+                    <h2>30 秒降温</h2>
+                    <p>把话说出口之前，先让情绪慢下来。</p>
+                  </div>
+                  <div className="breathing-circle compact" aria-hidden="true">
+                    <strong>30</strong>
+                    <em>秒</em>
+                  </div>
+                </section>
 
-            <form className="fight-composer" onSubmit={analyzeFight}>
-              <section className="cooldown-card" aria-label="三十秒降温">
-                <p>现在先做 30 秒降温</p>
-                <span>深呼吸，让情绪先安静下来</span>
-                <div className="breathing-circle" aria-hidden="true">
-                  <strong>深呼吸</strong>
-                  <em>放松一下</em>
+                <section className="repair-panel" aria-label="和好分析入口">
+                  <div className="mood-chip-grid" aria-label="当前情绪">
+                    {['委屈', '生气', '想哭', '想和好'].map((mood) => (
+                      <button
+                        key={mood}
+                        type="button"
+                        className={fightMood === mood ? 'active' : ''}
+                        onClick={() => setFightMood(mood)}
+                      >
+                        {mood}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label>
+                    刚才发生了什么
+                    <textarea
+                      value={fightText}
+                      onChange={(event) => setFightText(event.target.value)}
+                      placeholder="可以只写几句话：我现在很委屈，因为刚才他说话很冲，我其实只是想被理解。"
+                    />
+                  </label>
+
+                  <div className="tone-grid" aria-label="想让智能体帮什么">
+                    {([
+                      ['apology', '我该先道歉吗'],
+                      ['explain', '帮我解释清楚'],
+                      ['soft', '把话说软一点'],
+                      ['meet', '约 TA 好好聊'],
+                    ] as const).map(([tone, label]) => (
+                      <button
+                        key={tone}
+                        type="button"
+                        className={fightTone === tone ? 'active' : ''}
+                        onClick={() => setFightTone(tone)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {agentError && <p className="agent-error">{agentError}</p>}
+                  <button className="agent-button" type="submit" disabled={agentLoading}>
+                    {agentLoading ? '正在进入 AI 对话...' : '开始分析'}
+                  </button>
+                </section>
+              </form>
+            ) : (
+              <section className="reconcile-chat-page" aria-label="AI 和好对话">
+                <div className="chat-topbar">
+                  <button type="button" onClick={() => setReconcileView('entry')} aria-label="返回和好入口">
+                    ‹
+                  </button>
+                  <div>
+                    <span>AI 正在陪你们降温</span>
+                    <h2>和好对话</h2>
+                  </div>
                 </div>
-                <div className="mood-chip-grid" aria-label="当前情绪">
-                  {['委屈', '生气', '想哭', '想和好'].map((mood) => (
+
+                <article className="shared-core-card chat-summary">
+                  <span>现在的你：{fightMood}</span>
+                  <strong>{reconcileResult.sharedCore}</strong>
+                </article>
+
+                <div className="chat-thread" aria-live="polite">
+                  {reconcileChatMessages.map((message) => (
+                    <article className={`chat-bubble ${message.role}`} key={message.id}>
+                      {message.title && <span>{message.title}</span>}
+                      <p>{message.body}</p>
+                      {message.action && <em>{message.action}</em>}
+                    </article>
+                  ))}
+                  {agentLoading && (
+                    <article className="chat-bubble assistant typing">
+                      <span>AI 正在想</span>
+                      <p>先把刺人的话翻译成真正想被看见的需要。</p>
+                    </article>
+                  )}
+                </div>
+
+                <div className="suggestion-row" aria-label="快捷追问">
+                  {['怎么开口道歉', '帮我换一句更软的', '怎么约 TA 见面聊'].map((question) => (
                     <button
-                      key={mood}
+                      key={question}
                       type="button"
-                      className={fightMood === mood ? 'active' : ''}
-                      onClick={() => setFightMood(mood)}
+                      onClick={() => setReconcileChatInput(question)}
                     >
-                      {mood}
+                      {question}
                     </button>
                   ))}
                 </div>
-                <small>先让情绪安静下来，我们再一起看看发生了什么。</small>
-              </section>
 
-              <label>
-                发生了什么
-                <textarea
-                  value={fightText}
-                  onChange={(event) => setFightText(event.target.value)}
-                  placeholder="可以只写几句话：我现在很委屈，因为刚才他说话很冲，我其实只是想被理解。"
-                />
-              </label>
-
-              <div className="tone-grid" aria-label="想让智能体帮什么">
-                {([
-                  ['apology', '我该先道歉吗'],
-                  ['explain', '帮我解释清楚'],
-                  ['soft', '把话说软一点'],
-                  ['meet', '约 TA 好好聊'],
-                ] as const).map(([tone, label]) => (
-                  <button
-                    key={tone}
-                    type="button"
-                    className={fightTone === tone ? 'active' : ''}
-                    onClick={() => setFightTone(tone)}
-                  >
-                    {label}
+                {agentError && <p className="agent-error">{agentError}</p>}
+                <form className="chat-input-bar" onSubmit={askReconcileFollowup}>
+                  <input
+                    value={reconcileChatInput}
+                    onChange={(event) => setReconcileChatInput(event.target.value)}
+                    placeholder="继续问 AI：怎么和好、怎么说、怎么收尾..."
+                    aria-label="继续向 AI 提问"
+                  />
+                  <button type="submit" disabled={agentLoading || !reconcileChatInput.trim()}>
+                    发送
                   </button>
-                ))}
-              </div>
-              {agentError && <p className="agent-error">{agentError}</p>}
-              <button className="agent-button" type="submit" disabled={agentLoading}>
-                {agentLoading ? '正在帮你降温分析...' : '开始分析'}
-              </button>
-            </form>
-
-            <article className="shared-core-card">
-              <span>现在的你：{fightMood}</span>
-              <strong>{reconcileResult.sharedCore}</strong>
-            </article>
-
-            <section className="quick-question-grid" aria-label="你可能想问">
-              <div className="section-title">
-                <div>
-                  <p>你可能想问</p>
-                  <h2>选一个方向继续靠近</h2>
-                </div>
-              </div>
-              {[
-                ['我该先道歉吗', reconcileResult.repairAdvice],
-                ['帮我把话说软一点', reconcileResult.shortReply],
-                ['分析我们吵架的核心', reconcileResult.needs],
-              ].map(([question, answer]) => (
-                <article key={question}>
-                  <span>{question}</span>
-                  <p>{answer}</p>
-                </article>
-              ))}
-            </section>
-
-            <article className="next-step-card">
-              <span>慢一点会更好</span>
-              <p>{reconcileResult.nextStep}</p>
-            </article>
-
-            <section className="full-report-card" aria-label="完整和好分析报告">
-              <button
-                className="report-toggle"
-                type="button"
-                aria-expanded={fullReportOpen}
-                onClick={() => setFullReportOpen((open) => !open)}
-              >
-                <span>
-                  <em>完整分析</em>
-                  <strong>{fullReportOpen ? '收起报告' : '查看完整分析'}</strong>
-                </span>
-                <i aria-hidden="true">{fullReportOpen ? '⌃' : '⌄'}</i>
-              </button>
-
-              {fullReportOpen && (
-                <div className="full-report-body">
-                  {[
-                    ['发生了什么', reconcileResult.trigger],
-                    ['你可能真正想要', reconcileResult.myNeed],
-                    ['TA 可能真正想要', reconcileResult.partnerNeed],
-                    ['现在先别做', reconcileResult.avoidNow],
-                    ['可以怎么说', reconcileResult.gentleScript],
-                    ['30 分钟和好计划', reconcileResult.repairPlan],
-                  ].map(([title, content]) => (
-                    <article className="report-row" key={title}>
-                      <span>{title}</span>
-                      <p>{content}</p>
-                    </article>
-                  ))}
-
-                  <article className="report-row message-variants">
-                    <span>三种可发送的话</span>
-                    {[
-                      ['短句版', reconcileResult.shortReply],
-                      ['认真版', reconcileResult.sincereReply],
-                      ['软软版', reconcileResult.cuteReply],
-                    ].map(([label, content]) => (
-                      <p className="message-variant" key={label}>
-                        <strong>{label}</strong>
-                        {content}
-                      </p>
-                    ))}
-                  </article>
-                </div>
-              )}
-            </section>
+                </form>
+              </section>
+            )}
           </section>
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="更多设置">
