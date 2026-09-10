@@ -46,11 +46,35 @@ type ReconcileSession = {
   messages: ReconcileChatMessage[];
 };
 
+type PartnerProfileCategory = 'like' | 'avoid' | 'comfort' | 'gift' | 'habit';
+
+type PartnerProfileItem = {
+  id: string;
+  category: PartnerProfileCategory;
+  title: string;
+  detail: string;
+  tags: string[];
+  updatedAt: string;
+};
+
+type FuturePlanStatus = 'todo' | 'planned' | 'done';
+
+type FuturePlanItem = {
+  id: string;
+  title: string;
+  note: string;
+  occasion: string;
+  status: FuturePlanStatus;
+  createdAt: string;
+};
+
 type SharedMemoryData = {
   events: Anniversary[];
   messages: SecretMessage[];
   reconcileChats: ReconcileChatMessage[];
   reconcileSessions: ReconcileSession[];
+  partnerProfile: PartnerProfileItem[];
+  futurePlans: FuturePlanItem[];
   updatedAt?: string;
 };
 
@@ -180,6 +204,58 @@ function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
   });
 }
 
+function sanitizePartnerProfile(value: unknown): PartnerProfileItem[] {
+  if (!Array.isArray(value)) return [];
+
+  const categories = new Set(['like', 'avoid', 'comfort', 'gift', 'habit']);
+  return value.slice(0, 300).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const title = sanitizeText(item.title, '', 120);
+    if (!title) return [];
+    const category = typeof item.category === 'string' && categories.has(item.category) ? item.category as PartnerProfileCategory : 'like';
+    const tags = Array.isArray(item.tags)
+      ? item.tags.flatMap((tag) => {
+          const text = sanitizeText(tag, '', 24);
+          return text ? [text] : [];
+        }).slice(0, 8)
+      : [];
+
+    return [
+      {
+        id: sanitizeText(item.id, crypto.randomUUID(), 80),
+        category,
+        title,
+        detail: sanitizeText(item.detail, '', 1000),
+        tags,
+        updatedAt: sanitizeText(item.updatedAt, new Date().toISOString(), 30),
+      },
+    ];
+  });
+}
+
+function sanitizeFuturePlans(value: unknown): FuturePlanItem[] {
+  if (!Array.isArray(value)) return [];
+
+  const statuses = new Set(['todo', 'planned', 'done']);
+  return value.slice(0, 300).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const title = sanitizeText(item.title, '', 120);
+    if (!title) return [];
+    const status = typeof item.status === 'string' && statuses.has(item.status) ? item.status as FuturePlanStatus : 'todo';
+
+    return [
+      {
+        id: sanitizeText(item.id, crypto.randomUUID(), 80),
+        title,
+        note: sanitizeText(item.note, '', 1000),
+        occasion: sanitizeText(item.occasion, '未来某天', 80),
+        status,
+        createdAt: sanitizeText(item.createdAt, new Date().toISOString(), 30),
+      },
+    ];
+  });
+}
+
 async function readSpace(space: string) {
   const store = getStore({ name: 'love-map-shared', consistency: 'strong' });
   const data = await store.get(`spaces/${space}.json`, { type: 'json' });
@@ -192,6 +268,8 @@ async function readSpace(space: string) {
       messages: [],
       reconcileChats: [],
       reconcileSessions: [],
+      partnerProfile: [],
+      futurePlans: [],
       updatedAt: null,
     };
   }
@@ -206,6 +284,8 @@ async function readSpace(space: string) {
     messages: sanitizeMessages(data.messages),
     reconcileChats,
     reconcileSessions,
+    partnerProfile: sanitizePartnerProfile(data.partnerProfile),
+    futurePlans: sanitizeFuturePlans(data.futurePlans),
     updatedAt: sanitizeText(data.updatedAt, '', 40) || null,
   };
 }
@@ -221,6 +301,8 @@ async function writeSpace(space: string, payload: unknown) {
     messages: sanitizeMessages(payload.messages),
     reconcileChats: sanitizeReconcileChats(payload.reconcileChats),
     reconcileSessions: sanitizeReconcileSessions(payload.reconcileSessions),
+    partnerProfile: sanitizePartnerProfile(payload.partnerProfile),
+    futurePlans: sanitizeFuturePlans(payload.futurePlans),
     updatedAt: new Date().toISOString(),
   };
 

@@ -38,6 +38,8 @@ type SharedMemoryData = {
   messages: SecretMessage[];
   reconcileChats?: ReconcileChatMessage[];
   reconcileSessions?: ReconcileSession[];
+  partnerProfile?: PartnerProfileItem[];
+  futurePlans?: FuturePlanItem[];
   updatedAt?: string | null;
 };
 type ReconcileResult = {
@@ -72,11 +74,31 @@ type ReconcileSession = {
   updatedAt: string;
   messages: ReconcileChatMessage[];
 };
+type PartnerProfileCategory = 'like' | 'avoid' | 'comfort' | 'gift' | 'habit';
+type PartnerProfileItem = {
+  id: string;
+  category: PartnerProfileCategory;
+  title: string;
+  detail: string;
+  tags: string[];
+  updatedAt: string;
+};
+type FuturePlanStatus = 'todo' | 'planned' | 'done';
+type FuturePlanItem = {
+  id: string;
+  title: string;
+  note: string;
+  occasion: string;
+  status: FuturePlanStatus;
+  createdAt: string;
+};
 
 const storageKey = 'love-map-anniversaries-v2';
 const messageStorageKey = 'love-map-secret-messages-v1';
 const reconcileChatStorageKey = 'love-map-reconcile-chat-v1';
 const reconcileSessionStorageKey = 'love-map-reconcile-sessions-v1';
+const partnerProfileStorageKey = 'love-map-partner-profile-v1';
+const futurePlanStorageKey = 'love-map-future-plans-v1';
 const spaceStorageKey = 'love-map-space-code-v1';
 const defaultSpaceCode = 'dadata-xiaoxiao';
 const botName = '桃桃';
@@ -121,7 +143,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'timeline', label: '时间轴', icon: '◷' },
   { id: 'letters', label: '信件', icon: '✉' },
   { id: 'map', label: '和好', icon: '♡' },
-  { id: 'more', label: '更多', icon: '⋯' },
+  { id: 'more', label: '家', icon: '⋯' },
 ];
 
 const starterMessages: SecretMessage[] = [
@@ -163,6 +185,74 @@ const starterReconcileSessions: ReconcileSession[] = [
     createdAt: '2026-08-30T12:18',
     updatedAt: '2026-08-30T12:18',
     messages: starterReconcileChats,
+  },
+];
+
+const partnerCategoryMeta: Record<PartnerProfileCategory, { label: string; icon: string }> = {
+  like: { label: '喜欢', icon: '♥' },
+  avoid: { label: '雷区', icon: '!' },
+  comfort: { label: '安慰方式', icon: '☕' },
+  gift: { label: '礼物', icon: '✦' },
+  habit: { label: '习惯', icon: '◦' },
+};
+
+const futureStatusMeta: Record<FuturePlanStatus, { label: string; icon: string }> = {
+  todo: { label: '想做', icon: '○' },
+  planned: { label: '约定中', icon: '◐' },
+  done: { label: '已完成', icon: '●' },
+};
+
+const starterPartnerProfile: PartnerProfileItem[] = [
+  {
+    id: 'profile-like',
+    category: 'like',
+    title: '开心的时候喜欢奶茶和电影',
+    detail: '如果今天很累，甜一点的小东西会让心情变软。',
+    tags: ['奶茶', '电影', '甜食'],
+    updatedAt: '2026-08-30T12:24',
+  },
+  {
+    id: 'profile-comfort',
+    category: 'comfort',
+    title: '低落时先抱抱，再慢慢讲道理',
+    detail: '先确认“我在”，比马上解决问题更重要。',
+    tags: ['抱抱', '认真听', '别催'],
+    updatedAt: '2026-08-30T12:28',
+  },
+  {
+    id: 'profile-avoid',
+    category: 'avoid',
+    title: '不要冷战太久',
+    detail: '可以安静一会儿，但最好说清楚“我需要缓一下”。',
+    tags: ['不冷战', '别阴阳怪气'],
+    updatedAt: '2026-08-30T12:32',
+  },
+];
+
+const starterFuturePlans: FuturePlanItem[] = [
+  {
+    id: 'future-sea',
+    title: '一周年去海边',
+    note: '看日落，拍一张很像电影的合照。',
+    occasion: '一周年',
+    status: 'planned',
+    createdAt: '2026-08-30T12:36',
+  },
+  {
+    id: 'future-hotpot',
+    title: '下次见面吃火锅',
+    note: '点鸳鸯锅，给彼此夹第一口喜欢的菜。',
+    occasion: '下次见面',
+    status: 'todo',
+    createdAt: '2026-08-30T12:40',
+  },
+  {
+    id: 'future-photo',
+    title: '拍一次正式合照',
+    note: '把那一天放进时间轴。',
+    occasion: '某个周末',
+    status: 'todo',
+    createdAt: '2026-08-30T12:44',
   },
 ];
 
@@ -241,6 +331,18 @@ export default function Home() {
     const saved = window.localStorage.getItem(messageStorageKey);
     return saved ? JSON.parse(saved) : starterMessages;
   });
+  const [partnerProfile, setPartnerProfile] = useState<PartnerProfileItem[]>(() => {
+    if (typeof window === 'undefined') return starterPartnerProfile;
+
+    const saved = window.localStorage.getItem(partnerProfileStorageKey);
+    return saved ? JSON.parse(saved) : starterPartnerProfile;
+  });
+  const [futurePlans, setFuturePlans] = useState<FuturePlanItem[]>(() => {
+    if (typeof window === 'undefined') return starterFuturePlans;
+
+    const saved = window.localStorage.getItem(futurePlanStorageKey);
+    return saved ? JSON.parse(saved) : starterFuturePlans;
+  });
   const [spaceCode, setSpaceCode] = useState(() => {
     if (typeof window === 'undefined') return defaultSpaceCode;
 
@@ -263,6 +365,15 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(() => new Date().getTime());
   const [composeOpen, setComposeOpen] = useState(false);
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
+  const [homeComposer, setHomeComposer] = useState<'profile' | 'future' | null>(null);
+  const [profileCategory, setProfileCategory] = useState<PartnerProfileCategory>('like');
+  const [profileTitle, setProfileTitle] = useState('');
+  const [profileDetail, setProfileDetail] = useState('');
+  const [profileTags, setProfileTags] = useState('');
+  const [futureTitle, setFutureTitle] = useState('');
+  const [futureNote, setFutureNote] = useState('');
+  const [futureOccasion, setFutureOccasion] = useState('下次见面');
+  const [futureStatus, setFutureStatus] = useState<FuturePlanStatus>('todo');
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
@@ -324,6 +435,14 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
+    window.localStorage.setItem(partnerProfileStorageKey, JSON.stringify(partnerProfile));
+  }, [partnerProfile]);
+
+  useEffect(() => {
+    window.localStorage.setItem(futurePlanStorageKey, JSON.stringify(futurePlans));
+  }, [futurePlans]);
+
+  useEffect(() => {
     window.localStorage.setItem(reconcileSessionStorageKey, JSON.stringify(reconcileSessions));
   }, [reconcileSessions]);
 
@@ -354,6 +473,8 @@ export default function Home() {
         if (!payload.empty) {
           setEvents(payload.events);
           setMessages(payload.messages);
+          setPartnerProfile(payload.partnerProfile?.length ? payload.partnerProfile : starterPartnerProfile);
+          setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
           const nextSessions = payload.reconcileSessions?.length
             ? payload.reconcileSessions
             : payload.reconcileChats?.length
@@ -405,7 +526,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ events, messages, reconcileSessions }),
+        body: JSON.stringify({ events, messages, reconcileSessions, partnerProfile, futurePlans }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('保存失败');
@@ -425,10 +546,10 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, messages, reconcileSessions, spaceCode]);
+  }, [cloudHydrated, events, futurePlans, messages, partnerProfile, reconcileSessions, spaceCode]);
 
   useEffect(() => {
-    if (!cloudHydrated || activeTab !== 'map' || cloudStatus === 'saving' || savePendingRef.current) return;
+    if (!cloudHydrated || !['map', 'more'].includes(activeTab) || cloudStatus === 'saving' || savePendingRef.current) return;
 
     const timer = window.setInterval(() => {
       const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
@@ -440,6 +561,8 @@ export default function Home() {
           return response.json() as Promise<SharedMemoryData>;
         })
         .then((payload) => {
+          setPartnerProfile(payload.partnerProfile?.length ? payload.partnerProfile : starterPartnerProfile);
+          setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
             setReconcileSessions(payload.reconcileSessions);
             setActiveReconcileSessionId((current) =>
@@ -539,6 +662,8 @@ export default function Home() {
   );
   const lockedCapsules = visibleMessages.filter((message) => !isMessageOpen(message));
   const openMessages = visibleMessages.filter((message) => isMessageOpen(message));
+  const completedFuturePlans = futurePlans.filter((item) => item.status === 'done').length;
+  const recentPartnerProfile = partnerProfile.slice(0, 5);
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
@@ -623,6 +748,79 @@ export default function Home() {
     setPreviewDate(toLocalDate(new Date()));
     setSelectedId(starterEvents[0].id);
     setMessages(starterMessages);
+    setPartnerProfile(starterPartnerProfile);
+    setFuturePlans(starterFuturePlans);
+    setHomeComposer(null);
+  }
+
+  function addPartnerProfileItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedTitle = profileTitle.trim();
+    if (!trimmedTitle) return;
+    const tags = profileTags
+      .split(/[，,]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean)
+      .slice(0, 5);
+
+    setPartnerProfile((current) => [
+      {
+        id: crypto.randomUUID(),
+        category: profileCategory,
+        title: trimmedTitle,
+        detail: profileDetail.trim(),
+        tags,
+        updatedAt: toDateTimeLocal(new Date()),
+      },
+      ...current,
+    ]);
+    setHomeComposer(null);
+    setProfileTitle('');
+    setProfileDetail('');
+    setProfileTags('');
+  }
+
+  function removePartnerProfileItem(id: string) {
+    setPartnerProfile((current) => current.filter((item) => item.id !== id));
+  }
+
+  function addFuturePlanItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedTitle = futureTitle.trim();
+    if (!trimmedTitle) return;
+
+    setFuturePlans((current) => [
+      {
+        id: crypto.randomUUID(),
+        title: trimmedTitle,
+        note: futureNote.trim(),
+        occasion: futureOccasion.trim() || '未来某天',
+        status: futureStatus,
+        createdAt: toDateTimeLocal(new Date()),
+      },
+      ...current,
+    ]);
+    setHomeComposer(null);
+    setFutureTitle('');
+    setFutureNote('');
+    setFutureOccasion('下次见面');
+    setFutureStatus('todo');
+  }
+
+  function cycleFuturePlanStatus(id: string) {
+    const nextStatus: Record<FuturePlanStatus, FuturePlanStatus> = {
+      todo: 'planned',
+      planned: 'done',
+      done: 'todo',
+    };
+
+    setFuturePlans((current) =>
+      current.map((item) => item.id === id ? { ...item, status: nextStatus[item.status] } : item),
+    );
+  }
+
+  function removeFuturePlanItem(id: string) {
+    setFuturePlans((current) => current.filter((item) => item.id !== id));
   }
 
   function openTimelineFor(id: string) {
@@ -839,7 +1037,7 @@ export default function Home() {
   }
 
   const pageTitle =
-    activeTab === 'timeline' ? '时间轴' : activeTab === 'letters' ? '信件' : activeTab === 'map' ? '和好智能体' : activeTab === 'more' ? '更多' : '爱的地图';
+    activeTab === 'timeline' ? '时间轴' : activeTab === 'letters' ? '信件' : activeTab === 'map' ? '和好智能体' : activeTab === 'more' ? '家' : '爱的地图';
   const pageSubtitle =
     activeTab === 'timeline'
       ? `${events.length} 个共同回忆`
@@ -848,7 +1046,7 @@ export default function Home() {
         : activeTab === 'map'
           ? '不评判，只帮你们靠近'
           : activeTab === 'more'
-            ? '共同空间与同步设置'
+            ? '我们的房间与同步设置'
             : '记录属于我们的甜蜜回忆';
 
   return (
@@ -1229,24 +1427,28 @@ export default function Home() {
             )}
           </section>
         ) : activeTab === 'more' ? (
-          <section className="settings-view" aria-label="更多设置">
-            <article className="sync-card">
+          <section className="settings-view" aria-label="家">
+            <article className="home-room-card">
+              <div className="room-visual" aria-hidden="true">
+                <span>⌂</span>
+                <i>♥</i>
+              </div>
               <div className="sync-status-row">
                 <span className={`sync-dot ${cloudStatus}`} />
                 <div>
-                  <p>共同空间</p>
+                  <p>我们的房间</p>
                   <h2>{cloudMessage}</h2>
                 </div>
               </div>
               <label>
-                空间码
+                房间名称
                 <input
                   value={spaceCode}
                   onChange={(event) => setSpaceCode(event.target.value)}
-                  placeholder="输入你们共同约定的空间码"
+                  placeholder="输入你们共同约定的房间名称"
                 />
               </label>
-              <small>你和对方使用同一个空间码，就会看到同一份纪念日、信件和和好聊天室。</small>
+              <small>你和对方使用同一个房间名称，就会看到同一份纪念日、信件、和好聊天室、TA 小档案和未来清单。</small>
             </article>
 
             <section className="stats-grid" aria-label="记录统计">
@@ -1264,9 +1466,180 @@ export default function Home() {
               </article>
             </section>
 
+            <section className="home-memory-card partner-profile-card" aria-label="TA 的小档案">
+              <div className="section-title">
+                <div>
+                  <p>TA 的小档案</p>
+                  <h2>关于 TA 的一切，我都想好好记住。</h2>
+                </div>
+                <button type="button" onClick={() => setHomeComposer('profile')}>
+                  添加
+                </button>
+              </div>
+
+              <div className="profile-category-grid">
+                {(Object.entries(partnerCategoryMeta) as [PartnerProfileCategory, { label: string; icon: string }][]).map(([category, meta]) => {
+                  const count = partnerProfile.filter((item) => item.category === category).length;
+                  return (
+                    <button
+                      type="button"
+                      key={category}
+                      onClick={() => {
+                        setProfileCategory(category);
+                        setHomeComposer('profile');
+                      }}
+                    >
+                      <span>{meta.icon}</span>
+                      <strong>{meta.label}</strong>
+                      <em>{count} 条</em>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="profile-list">
+                {recentPartnerProfile.map((item) => (
+                  <article className="profile-note" key={item.id}>
+                    <div>
+                      <span>{partnerCategoryMeta[item.category].label}</span>
+                      <h3>{item.title}</h3>
+                      {item.detail && <p>{item.detail}</p>}
+                      {item.tags.length > 0 && (
+                        <div className="tag-row">
+                          {item.tags.map((tag) => (
+                            <em key={tag}>{tag}</em>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <button type="button" onClick={() => removePartnerProfileItem(item.id)} aria-label={`删除 ${item.title}`}>
+                      删除
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="home-memory-card future-plan-card" aria-label="未来想一起做">
+              <div className="section-title">
+                <div>
+                  <p>未来想一起做</p>
+                  <h2>把想做的事，一件件变成我们的回忆。</h2>
+                </div>
+                <button type="button" onClick={() => setHomeComposer('future')}>
+                  添加
+                </button>
+              </div>
+
+              <div className="future-progress">
+                <span style={{ width: `${futurePlans.length ? Math.round((completedFuturePlans / futurePlans.length) * 100) : 0}%` }} />
+              </div>
+
+              <div className="future-list">
+                {futurePlans.map((item) => (
+                  <article className={`future-item ${item.status}`} key={item.id}>
+                    <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
+                      {futureStatusMeta[item.status].icon}
+                    </button>
+                    <div>
+                      <h3>{item.title}</h3>
+                      {item.note && <p>{item.note}</p>}
+                    </div>
+                    <span>{item.occasion}</span>
+                    <em>{futureStatusMeta[item.status].label}</em>
+                    <button type="button" onClick={() => removeFuturePlanItem(item.id)} aria-label={`删除 ${item.title}`}>
+                      ×
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
             <button className="reset-wide-button" type="button" onClick={resetDemo}>
               重置为示例内容
             </button>
+
+            {homeComposer === 'profile' && (
+              <div className="modal-backdrop" role="presentation">
+                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加 TA 小档案">
+                  <div className="section-title">
+                    <div>
+                      <p>TA 的小档案</p>
+                      <h2>记录一个关于 TA 的细节</h2>
+                    </div>
+                    <button type="button" onClick={() => setHomeComposer(null)}>
+                      关闭
+                    </button>
+                  </div>
+                  <form onSubmit={addPartnerProfileItem}>
+                    <label>
+                      分类
+                      <select value={profileCategory} onChange={(event) => setProfileCategory(event.target.value as PartnerProfileCategory)}>
+                        {(Object.entries(partnerCategoryMeta) as [PartnerProfileCategory, { label: string; icon: string }][]).map(([category, meta]) => (
+                          <option key={category} value={category}>{meta.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      标题
+                      <input value={profileTitle} onChange={(event) => setProfileTitle(event.target.value)} placeholder="例如：低落时先抱抱" />
+                    </label>
+                    <label>
+                      细节
+                      <textarea value={profileDetail} onChange={(event) => setProfileDetail(event.target.value)} placeholder="写下你想记住的细节" />
+                    </label>
+                    <label>
+                      标签
+                      <input value={profileTags} onChange={(event) => setProfileTags(event.target.value)} placeholder="用逗号分隔，例如：奶茶,电影,抱抱" />
+                    </label>
+                    <button className="save-button" type="submit">
+                      保存小档案
+                    </button>
+                  </form>
+                </section>
+              </div>
+            )}
+
+            {homeComposer === 'future' && (
+              <div className="modal-backdrop" role="presentation">
+                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加未来想一起做的事情">
+                  <div className="section-title">
+                    <div>
+                      <p>未来想一起做</p>
+                      <h2>把一个小愿望放进家里</h2>
+                    </div>
+                    <button type="button" onClick={() => setHomeComposer(null)}>
+                      关闭
+                    </button>
+                  </div>
+                  <form onSubmit={addFuturePlanItem}>
+                    <label>
+                      想做的事
+                      <input value={futureTitle} onChange={(event) => setFutureTitle(event.target.value)} placeholder="例如：一周年去海边" />
+                    </label>
+                    <label>
+                      场景
+                      <input value={futureOccasion} onChange={(event) => setFutureOccasion(event.target.value)} placeholder="一周年 / 下次见面 / 某个周末" />
+                    </label>
+                    <label>
+                      状态
+                      <select value={futureStatus} onChange={(event) => setFutureStatus(event.target.value as FuturePlanStatus)}>
+                        {(Object.entries(futureStatusMeta) as [FuturePlanStatus, { label: string; icon: string }][]).map(([status, meta]) => (
+                          <option key={status} value={status}>{meta.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      小备注
+                      <textarea value={futureNote} onChange={(event) => setFutureNote(event.target.value)} placeholder="写一句为什么想一起做" />
+                    </label>
+                    <button className="save-button" type="submit">
+                      保存未来清单
+                    </button>
+                  </form>
+                </section>
+              </div>
+            )}
           </section>
         ) : (
           <>
