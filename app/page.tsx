@@ -143,7 +143,7 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'timeline', label: '时间轴', icon: '◷' },
   { id: 'letters', label: '信件', icon: '✉' },
   { id: 'map', label: '和好', icon: '♡' },
-  { id: 'more', label: '家', icon: '⋯' },
+  { id: 'more', label: '家', icon: '⌂' },
 ];
 
 const starterMessages: SecretMessage[] = [
@@ -310,12 +310,7 @@ function getMapPoint(index: number, total: number) {
 }
 
 export default function Home() {
-  const [events, setEvents] = useState<Anniversary[]>(() => {
-    if (typeof window === 'undefined') return starterEvents;
-
-    const saved = window.localStorage.getItem(storageKey);
-    return saved ? JSON.parse(saved) : starterEvents;
-  });
+  const [events, setEvents] = useState<Anniversary[]>(starterEvents);
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('2026-09-19');
@@ -325,29 +320,10 @@ export default function Home() {
   const [previewDate, setPreviewDate] = useState(() => toLocalDate(new Date()));
   const [oldestFirst, setOldestFirst] = useState(true);
   const [selectedId, setSelectedId] = useState(starterEvents[0].id);
-  const [messages, setMessages] = useState<SecretMessage[]>(() => {
-    if (typeof window === 'undefined') return starterMessages;
-
-    const saved = window.localStorage.getItem(messageStorageKey);
-    return saved ? JSON.parse(saved) : starterMessages;
-  });
-  const [partnerProfile, setPartnerProfile] = useState<PartnerProfileItem[]>(() => {
-    if (typeof window === 'undefined') return starterPartnerProfile;
-
-    const saved = window.localStorage.getItem(partnerProfileStorageKey);
-    return saved ? JSON.parse(saved) : starterPartnerProfile;
-  });
-  const [futurePlans, setFuturePlans] = useState<FuturePlanItem[]>(() => {
-    if (typeof window === 'undefined') return starterFuturePlans;
-
-    const saved = window.localStorage.getItem(futurePlanStorageKey);
-    return saved ? JSON.parse(saved) : starterFuturePlans;
-  });
-  const [spaceCode, setSpaceCode] = useState(() => {
-    if (typeof window === 'undefined') return defaultSpaceCode;
-
-    return window.localStorage.getItem(spaceStorageKey) || defaultSpaceCode;
-  });
+  const [messages, setMessages] = useState<SecretMessage[]>(starterMessages);
+  const [partnerProfile, setPartnerProfile] = useState<PartnerProfileItem[]>(starterPartnerProfile);
+  const [futurePlans, setFuturePlans] = useState<FuturePlanItem[]>(starterFuturePlans);
+  const [spaceCode, setSpaceCode] = useState(defaultSpaceCode);
   const [cloudStatus, setCloudStatus] = useState<CloudStatus>('idle');
   const [cloudMessage, setCloudMessage] = useState('共同空间准备中');
   const [cloudHydrated, setCloudHydrated] = useState(false);
@@ -365,7 +341,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(() => new Date().getTime());
   const [composeOpen, setComposeOpen] = useState(false);
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
-  const [homeComposer, setHomeComposer] = useState<'profile' | 'future' | null>(null);
+  const [homeComposer, setHomeComposer] = useState<'room' | 'profile' | 'future' | null>(null);
   const [profileCategory, setProfileCategory] = useState<PartnerProfileCategory>('like');
   const [profileTitle, setProfileTitle] = useState('');
   const [profileDetail, setProfileDetail] = useState('');
@@ -377,32 +353,9 @@ export default function Home() {
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
-  const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>(() => {
-    if (typeof window === 'undefined') return starterReconcileSessions;
-
-    try {
-      const storedSessions = JSON.parse(window.localStorage.getItem(reconcileSessionStorageKey) || '[]') as ReconcileSession[];
-      if (storedSessions.length) return storedSessions;
-
-      const legacyMessages = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
-      if (legacyMessages.length) {
-        return [
-          {
-            id: 'session-legacy',
-            title: '之前的和好聊天',
-            createdAt: legacyMessages[0]?.createdAt || toDateTimeLocal(new Date()),
-            updatedAt: legacyMessages.at(-1)?.createdAt || toDateTimeLocal(new Date()),
-            messages: legacyMessages,
-          },
-        ];
-      }
-
-      return starterReconcileSessions;
-    } catch {
-      return starterReconcileSessions;
-    }
-  });
+  const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>(starterReconcileSessions);
   const [activeReconcileSessionId, setActiveReconcileSessionId] = useState(() => starterReconcileSessions[0].id);
+  const [localHydrated, setLocalHydrated] = useState(false);
   const [reconcileScreen, setReconcileScreen] = useState<'sessions' | 'room'>('sessions');
   const [reconcileSpeaker, setReconcileSpeaker] = useState<'userA' | 'userB'>('userA');
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
@@ -427,30 +380,85 @@ export default function Home() {
   const [dragStart, setDragStart] = useState<{ x: number; y: number; originX: number; originY: number } | null>(null);
 
   useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        const savedEvents = window.localStorage.getItem(storageKey);
+        if (savedEvents) setEvents(JSON.parse(savedEvents));
+
+        const savedMessages = window.localStorage.getItem(messageStorageKey);
+        if (savedMessages) setMessages(JSON.parse(savedMessages));
+
+        const savedProfile = window.localStorage.getItem(partnerProfileStorageKey);
+        if (savedProfile) setPartnerProfile(JSON.parse(savedProfile));
+
+        const savedPlans = window.localStorage.getItem(futurePlanStorageKey);
+        if (savedPlans) setFuturePlans(JSON.parse(savedPlans));
+
+        const savedSpace = window.localStorage.getItem(spaceStorageKey);
+        if (savedSpace) setSpaceCode(savedSpace);
+
+        const storedSessions = JSON.parse(window.localStorage.getItem(reconcileSessionStorageKey) || '[]') as ReconcileSession[];
+        if (storedSessions.length) {
+          setReconcileSessions(storedSessions);
+          setActiveReconcileSessionId(storedSessions[0].id);
+        } else {
+          const legacyMessages = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
+          if (legacyMessages.length) {
+            const legacySession = {
+              id: 'session-legacy',
+              title: '之前的和好聊天',
+              createdAt: legacyMessages[0]?.createdAt || toDateTimeLocal(new Date()),
+              updatedAt: legacyMessages.at(-1)?.createdAt || toDateTimeLocal(new Date()),
+              messages: legacyMessages,
+            };
+            setReconcileSessions([legacySession]);
+            setActiveReconcileSessionId(legacySession.id);
+          }
+        }
+      } catch {
+        setEvents(starterEvents);
+        setMessages(starterMessages);
+        setPartnerProfile(starterPartnerProfile);
+        setFuturePlans(starterFuturePlans);
+        setReconcileSessions(starterReconcileSessions);
+      } finally {
+        setLocalHydrated(true);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(storageKey, JSON.stringify(events));
-  }, [events]);
+  }, [events, localHydrated]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(messageStorageKey, JSON.stringify(messages));
-  }, [messages]);
+  }, [localHydrated, messages]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(partnerProfileStorageKey, JSON.stringify(partnerProfile));
-  }, [partnerProfile]);
+  }, [localHydrated, partnerProfile]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(futurePlanStorageKey, JSON.stringify(futurePlans));
-  }, [futurePlans]);
+  }, [futurePlans, localHydrated]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(reconcileSessionStorageKey, JSON.stringify(reconcileSessions));
-  }, [reconcileSessions]);
+  }, [localHydrated, reconcileSessions]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     window.localStorage.setItem(spaceStorageKey, spaceCode);
-  }, [spaceCode]);
+  }, [localHydrated, spaceCode]);
 
   useEffect(() => {
+    if (!localHydrated) return;
     const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
     const controller = new AbortController();
 
@@ -505,10 +513,10 @@ export default function Home() {
       });
 
     return () => controller.abort();
-  }, [spaceCode]);
+  }, [localHydrated, spaceCode]);
 
   useEffect(() => {
-    if (!cloudHydrated) return;
+    if (!localHydrated || !cloudHydrated) return;
 
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
@@ -546,7 +554,7 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, futurePlans, messages, partnerProfile, reconcileSessions, spaceCode]);
+  }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, reconcileSessions, spaceCode]);
 
   useEffect(() => {
     if (!cloudHydrated || !['map', 'more'].includes(activeTab) || cloudStatus === 'saving' || savePendingRef.current) return;
@@ -662,8 +670,10 @@ export default function Home() {
   );
   const lockedCapsules = visibleMessages.filter((message) => !isMessageOpen(message));
   const openMessages = visibleMessages.filter((message) => isMessageOpen(message));
-  const completedFuturePlans = futurePlans.filter((item) => item.status === 'done').length;
   const recentPartnerProfile = partnerProfile.slice(0, 5);
+  const roomDisplayName = spaceCode === defaultSpaceCode ? '我们的小窝' : spaceCode || '我们的小窝';
+  const homeSyncLabel =
+    cloudStatus === 'saved' || cloudStatus === 'ready' ? '已同步' : cloudStatus === 'loading' || cloudStatus === 'saving' ? '同步中' : '待同步';
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
@@ -780,10 +790,6 @@ export default function Home() {
     setProfileTags('');
   }
 
-  function removePartnerProfileItem(id: string) {
-    setPartnerProfile((current) => current.filter((item) => item.id !== id));
-  }
-
   function addFuturePlanItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedTitle = futureTitle.trim();
@@ -817,10 +823,6 @@ export default function Home() {
     setFuturePlans((current) =>
       current.map((item) => item.id === id ? { ...item, status: nextStatus[item.status] } : item),
     );
-  }
-
-  function removeFuturePlanItem(id: string) {
-    setFuturePlans((current) => current.filter((item) => item.id !== id));
   }
 
   function openTimelineFor(id: string) {
@@ -1052,7 +1054,7 @@ export default function Home() {
   return (
     <main className={todaysEvents.length ? 'love-app celebrating' : 'love-app'}>
       <div className="phone-shell">
-        <header className="app-header">
+        <header className={activeTab === 'more' ? 'app-header home-hidden-header' : 'app-header'}>
           <div>
             <h1>{pageTitle}</h1>
             <p>{pageSubtitle}</p>
@@ -1428,136 +1430,172 @@ export default function Home() {
           </section>
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="家">
+            <section className="home-scene" aria-label="我们的房间">
+              <div className="home-status-bar" aria-hidden="true">
+                <strong>9:41</strong>
+                <span>▮▮▮ ◒ ▰</span>
+              </div>
+              <div className="home-scene-copy">
+                <h2>家 <span>♥</span></h2>
+                <p>我们的房间</p>
+                <small>和你在一起，<br />就是最温暖的家。</small>
+              </div>
+              <div className="home-living-room" aria-hidden="true">
+                <span className="wall-note">一起<br />更好的未来 ♡</span>
+                <span className="flower-vase" />
+                <span className="plant-leaf leaf-one" />
+                <span className="plant-leaf leaf-two" />
+                <span className="plant-leaf leaf-three" />
+                <span className="sofa-back" />
+                <span className="sofa-seat" />
+                <span className="soft-pillow">有你<br />就有家 ♡</span>
+              </div>
+            </section>
+
             <article className="home-room-card">
               <div className="room-visual" aria-hidden="true">
                 <span>⌂</span>
                 <i>♥</i>
               </div>
               <div className="sync-status-row">
-                <span className={`sync-dot ${cloudStatus}`} />
                 <div>
-                  <p>我们的房间</p>
-                  <h2>{cloudMessage}</h2>
+                  <p>房间名称</p>
+                  <h2>
+                    {roomDisplayName}
+                    <button type="button" onClick={() => setHomeComposer('room')} aria-label="编辑房间名称">
+                      ✎
+                    </button>
+                  </h2>
+                  <small title={cloudMessage}><span className={`sync-dot ${cloudStatus}`} />{homeSyncLabel} · 两个人的爱都在这里</small>
                 </div>
+                <em>›</em>
               </div>
-              <label>
-                房间名称
-                <input
-                  value={spaceCode}
-                  onChange={(event) => setSpaceCode(event.target.value)}
-                  placeholder="输入你们共同约定的房间名称"
-                />
-              </label>
-              <small>你和对方使用同一个房间名称，就会看到同一份纪念日、信件、和好聊天室、TA 小档案和未来清单。</small>
             </article>
-
-            <section className="stats-grid" aria-label="记录统计">
-              <article>
-                <span>{events.length}</span>
-                <p>纪念日</p>
-              </article>
-              <article>
-                <span>{messages.filter((message) => message.kind === 'whisper').length}</span>
-                <p>悄悄话</p>
-              </article>
-              <article>
-                <span>{messages.filter((message) => message.kind === 'capsule').length}</span>
-                <p>胶囊</p>
-              </article>
-            </section>
 
             <section className="home-memory-card partner-profile-card" aria-label="TA 的小档案">
               <div className="section-title">
+                <span className="home-section-icon">♥</span>
                 <div>
                   <p>TA 的小档案</p>
                   <h2>关于 TA 的一切，我都想好好记住。</h2>
                 </div>
                 <button type="button" onClick={() => setHomeComposer('profile')}>
-                  添加
+                  编辑 ›
                 </button>
               </div>
 
-              <div className="profile-category-grid">
-                {(Object.entries(partnerCategoryMeta) as [PartnerProfileCategory, { label: string; icon: string }][]).map(([category, meta]) => {
-                  const count = partnerProfile.filter((item) => item.category === category).length;
+              <div className="profile-board">
+                <div className="paper-note" aria-hidden="true">
+                  <span>很高兴<br />认识你 ♡</span>
+                </div>
+                <div className="profile-rows">
+                  {(['like', 'avoid', 'comfort'] as PartnerProfileCategory[]).map((category) => {
+                    const meta = partnerCategoryMeta[category];
+                    const items = partnerProfile.filter((item) => item.category === category);
+                    const tags = items.flatMap((item) => item.tags.length ? item.tags : [item.title]).slice(0, 3);
                   return (
-                    <button
-                      type="button"
-                      key={category}
-                      onClick={() => {
-                        setProfileCategory(category);
-                        setHomeComposer('profile');
-                      }}
-                    >
-                      <span>{meta.icon}</span>
-                      <strong>{meta.label}</strong>
-                      <em>{count} 条</em>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="profile-list">
-                {recentPartnerProfile.map((item) => (
-                  <article className="profile-note" key={item.id}>
-                    <div>
-                      <span>{partnerCategoryMeta[item.category].label}</span>
-                      <h3>{item.title}</h3>
-                      {item.detail && <p>{item.detail}</p>}
-                      {item.tags.length > 0 && (
-                        <div className="tag-row">
-                          {item.tags.map((tag) => (
-                            <em key={tag}>{tag}</em>
+                      <div className="profile-row" key={category}>
+                        <span>{meta.icon}</span>
+                        <strong>{meta.label}</strong>
+                        <div>
+                          {(tags.length ? tags : ['添加']).map((tag) => (
+                            <button
+                              type="button"
+                              key={tag}
+                              onClick={() => {
+                                setProfileCategory(category);
+                                setHomeComposer('profile');
+                              }}
+                            >
+                              {tag}
+                            </button>
                           ))}
                         </div>
-                      )}
-                    </div>
-                    <button type="button" onClick={() => removePartnerProfileItem(item.id)} aria-label={`删除 ${item.title}`}>
-                      删除
-                    </button>
-                  </article>
-                ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setProfileCategory(category);
+                            setHomeComposer('profile');
+                          }}
+                          aria-label={`添加${meta.label}`}
+                        >
+                          +
+                        </button>
+                      </div>
+                  );
+                })}
+                </div>
+                <article className="profile-quote">
+                  <span>▤</span>
+                  <p>{recentPartnerProfile[0]?.detail || '你笑起来的时候，整个世界都变温柔了。'}</p>
+                  <button type="button" onClick={() => setHomeComposer('profile')} aria-label="编辑小档案">
+                    ✎
+                  </button>
+                </article>
               </div>
             </section>
 
             <section className="home-memory-card future-plan-card" aria-label="未来想一起做">
               <div className="section-title">
+                <span className="home-section-icon star">★</span>
                 <div>
                   <p>未来想一起做</p>
                   <h2>把想做的事，一件件变成我们的回忆。</h2>
                 </div>
                 <button type="button" onClick={() => setHomeComposer('future')}>
-                  添加
+                  添加 <span>＋</span>
                 </button>
               </div>
 
-              <div className="future-progress">
-                <span style={{ width: `${futurePlans.length ? Math.round((completedFuturePlans / futurePlans.length) * 100) : 0}%` }} />
-              </div>
-
               <div className="future-list">
-                {futurePlans.map((item) => (
+                {futurePlans.slice(0, 3).map((item, index) => (
                   <article className={`future-item ${item.status}`} key={item.id}>
                     <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
-                      {futureStatusMeta[item.status].icon}
+                      {item.status === 'done' ? '✓' : ''}
                     </button>
+                    <div className={`future-thumb thumb-${index + 1}`} aria-hidden="true" />
                     <div>
                       <h3>{item.title}</h3>
                       {item.note && <p>{item.note}</p>}
                     </div>
                     <span>{item.occasion}</span>
-                    <em>{futureStatusMeta[item.status].label}</em>
-                    <button type="button" onClick={() => removeFuturePlanItem(item.id)} aria-label={`删除 ${item.title}`}>
-                      ×
-                    </button>
+                    <em>›</em>
                   </article>
                 ))}
               </div>
+              <p className="future-signature">未来的每一件小事<br />都有你 ♡</p>
             </section>
 
             <button className="reset-wide-button" type="button" onClick={resetDemo}>
               重置为示例内容
             </button>
+
+            {homeComposer === 'room' && (
+              <div className="modal-backdrop" role="presentation">
+                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="编辑房间名称">
+                  <div className="section-title">
+                    <div>
+                      <p>我们的房间</p>
+                      <h2>改一个只有你们懂的房间名称</h2>
+                    </div>
+                    <button type="button" onClick={() => setHomeComposer(null)}>
+                      关闭
+                    </button>
+                  </div>
+                  <label>
+                    房间名称
+                    <input
+                      value={spaceCode}
+                      onChange={(event) => setSpaceCode(event.target.value)}
+                      placeholder="输入你们共同约定的房间名称"
+                    />
+                  </label>
+                  <button className="save-button" type="button" onClick={() => setHomeComposer(null)}>
+                    保存房间名称
+                  </button>
+                </section>
+              </div>
+            )}
 
             {homeComposer === 'profile' && (
               <div className="modal-backdrop" role="presentation">
