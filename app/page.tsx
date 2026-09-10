@@ -37,6 +37,7 @@ type SharedMemoryData = {
   events: Anniversary[];
   messages: SecretMessage[];
   reconcileChats?: ReconcileChatMessage[];
+  reconcileSessions?: ReconcileSession[];
   updatedAt?: string | null;
 };
 type ReconcileResult = {
@@ -64,10 +65,18 @@ type ReconcileChatMessage = {
   action?: string;
   createdAt: string;
 };
+type ReconcileSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ReconcileChatMessage[];
+};
 
 const storageKey = 'love-map-anniversaries-v2';
 const messageStorageKey = 'love-map-secret-messages-v1';
 const reconcileChatStorageKey = 'love-map-reconcile-chat-v1';
+const reconcileSessionStorageKey = 'love-map-reconcile-sessions-v1';
 const spaceStorageKey = 'love-map-space-code-v1';
 const defaultSpaceCode = 'dadata-xiaoxiao';
 const botName = '桃桃';
@@ -144,6 +153,16 @@ const starterReconcileChats: ReconcileChatMessage[] = [
     title: botName,
     body: '我在这里陪你们慢慢说。你们可以切换用户 A / 用户 B 发言；聊到一半时，点“桃桃总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。',
     createdAt: '2026-08-30T12:18',
+  },
+];
+
+const starterReconcileSessions: ReconcileSession[] = [
+  {
+    id: 'session-welcome',
+    title: '第一次和好练习',
+    createdAt: '2026-08-30T12:18',
+    updatedAt: '2026-08-30T12:18',
+    messages: starterReconcileChats,
   },
 ];
 
@@ -231,6 +250,7 @@ export default function Home() {
   const [cloudMessage, setCloudMessage] = useState('共同空间准备中');
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
+  const savePendingRef = useRef(false);
   const [messageKind, setMessageKind] = useState<MessageKind>('whisper');
   const [messageTo, setMessageTo] = useState('小小塔大王');
   const [messageTitle, setMessageTitle] = useState('');
@@ -246,16 +266,33 @@ export default function Home() {
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
-  const [reconcileChatMessages, setReconcileChatMessages] = useState<ReconcileChatMessage[]>(() => {
-    if (typeof window === 'undefined') return starterReconcileChats;
+  const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>(() => {
+    if (typeof window === 'undefined') return starterReconcileSessions;
 
     try {
-      const stored = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
-      return stored.length ? stored : starterReconcileChats;
+      const storedSessions = JSON.parse(window.localStorage.getItem(reconcileSessionStorageKey) || '[]') as ReconcileSession[];
+      if (storedSessions.length) return storedSessions;
+
+      const legacyMessages = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
+      if (legacyMessages.length) {
+        return [
+          {
+            id: 'session-legacy',
+            title: '之前的和好聊天',
+            createdAt: legacyMessages[0]?.createdAt || toDateTimeLocal(new Date()),
+            updatedAt: legacyMessages.at(-1)?.createdAt || toDateTimeLocal(new Date()),
+            messages: legacyMessages,
+          },
+        ];
+      }
+
+      return starterReconcileSessions;
     } catch {
-      return starterReconcileChats;
+      return starterReconcileSessions;
     }
   });
+  const [activeReconcileSessionId, setActiveReconcileSessionId] = useState(() => starterReconcileSessions[0].id);
+  const [reconcileScreen, setReconcileScreen] = useState<'sessions' | 'room'>('sessions');
   const [reconcileSpeaker, setReconcileSpeaker] = useState<'userA' | 'userB'>('userA');
   const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
     answer:
@@ -287,8 +324,8 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
-    window.localStorage.setItem(reconcileChatStorageKey, JSON.stringify(reconcileChatMessages));
-  }, [reconcileChatMessages]);
+    window.localStorage.setItem(reconcileSessionStorageKey, JSON.stringify(reconcileSessions));
+  }, [reconcileSessions]);
 
   useEffect(() => {
     window.localStorage.setItem(spaceStorageKey, spaceCode);
@@ -317,7 +354,21 @@ export default function Home() {
         if (!payload.empty) {
           setEvents(payload.events);
           setMessages(payload.messages);
-          setReconcileChatMessages(payload.reconcileChats?.length ? payload.reconcileChats : starterReconcileChats);
+          const nextSessions = payload.reconcileSessions?.length
+            ? payload.reconcileSessions
+            : payload.reconcileChats?.length
+              ? [
+                  {
+                    id: 'session-legacy',
+                    title: '之前的和好聊天',
+                    createdAt: payload.reconcileChats[0]?.createdAt || toDateTimeLocal(new Date()),
+                    updatedAt: payload.reconcileChats.at(-1)?.createdAt || toDateTimeLocal(new Date()),
+                    messages: payload.reconcileChats,
+                  },
+                ]
+              : starterReconcileSessions;
+          setReconcileSessions(nextSessions);
+          setActiveReconcileSessionId((current) => nextSessions.some((session) => session.id === current) ? current : nextSessions[0].id);
           setSelectedId(payload.events[0]?.id ?? starterEvents[0].id);
         }
 
@@ -342,6 +393,8 @@ export default function Home() {
       window.clearTimeout(saveTimerRef.current);
     }
 
+    savePendingRef.current = true;
+
     saveTimerRef.current = window.setTimeout(() => {
       const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
       setCloudStatus('saving');
@@ -352,14 +405,16 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ events, messages, reconcileChats: reconcileChatMessages }),
+        body: JSON.stringify({ events, messages, reconcileSessions }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('保存失败');
+          savePendingRef.current = false;
           setCloudStatus('saved');
           setCloudMessage('已保存到共同空间');
         })
         .catch(() => {
+          savePendingRef.current = false;
           setCloudStatus('error');
           setCloudMessage('云端保存失败，本机仍已保留');
         });
@@ -370,10 +425,10 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, messages, reconcileChatMessages, spaceCode]);
+  }, [cloudHydrated, events, messages, reconcileSessions, spaceCode]);
 
   useEffect(() => {
-    if (!cloudHydrated || activeTab !== 'map' || cloudStatus === 'saving') return;
+    if (!cloudHydrated || activeTab !== 'map' || cloudStatus === 'saving' || savePendingRef.current) return;
 
     const timer = window.setInterval(() => {
       const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
@@ -385,8 +440,13 @@ export default function Home() {
           return response.json() as Promise<SharedMemoryData>;
         })
         .then((payload) => {
-          if (payload.reconcileChats?.length) {
-            setReconcileChatMessages(payload.reconcileChats);
+          if (payload.reconcileSessions?.length) {
+            setReconcileSessions(payload.reconcileSessions);
+            setActiveReconcileSessionId((current) =>
+              payload.reconcileSessions?.some((session) => session.id === current)
+                ? current
+                : payload.reconcileSessions?.[0]?.id || starterReconcileSessions[0].id,
+            );
           }
         })
         .catch(() => undefined);
@@ -479,6 +539,53 @@ export default function Home() {
   );
   const lockedCapsules = visibleMessages.filter((message) => !isMessageOpen(message));
   const openMessages = visibleMessages.filter((message) => isMessageOpen(message));
+  const activeReconcileSession =
+    reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
+  const reconcileChatMessages = activeReconcileSession.messages;
+
+  function getSessionPreview(session: ReconcileSession) {
+    const lastMessage = session.messages.at(-1);
+    if (!lastMessage) return '还没有开始聊天';
+    const speaker = lastMessage.role === 'userA' ? '用户A' : lastMessage.role === 'userB' ? '用户B' : botName;
+    return `${speaker}：${lastMessage.body}`;
+  }
+
+  function updateActiveReconcileSession(updater: (session: ReconcileSession) => ReconcileSession) {
+    setReconcileSessions((current) =>
+      current.map((session) => session.id === activeReconcileSession.id ? updater(session) : session),
+    );
+  }
+
+  function createReconcileSession() {
+    const now = toDateTimeLocal(new Date());
+    const id = crypto.randomUUID();
+    const session: ReconcileSession = {
+      id,
+      title: '新的和好房间',
+      createdAt: now,
+      updatedAt: now,
+      messages: [
+        {
+          ...starterReconcileChats[0],
+          id: crypto.randomUUID(),
+          createdAt: now,
+        },
+      ],
+    };
+
+    setReconcileSessions((current) => [session, ...current]);
+    setActiveReconcileSessionId(id);
+    setReconcileChatInput('');
+    setAgentError('');
+    setReconcileScreen('room');
+  }
+
+  function openReconcileSession(id: string) {
+    setActiveReconcileSessionId(id);
+    setReconcileChatInput('');
+    setAgentError('');
+    setReconcileScreen('room');
+  }
 
   function addEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -651,20 +758,30 @@ export default function Home() {
     const body = reconcileChatInput.trim();
     if (!body) return;
     setAgentError('');
-    setReconcileChatMessages((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        role: reconcileSpeaker,
-        body,
-        createdAt: toDateTimeLocal(new Date()),
-      },
-    ]);
+    const now = toDateTimeLocal(new Date());
+    updateActiveReconcileSession((session) => {
+      const messages = [
+        ...session.messages,
+        {
+          id: crypto.randomUUID(),
+          role: reconcileSpeaker,
+          body,
+          createdAt: now,
+        },
+      ];
+      const humanCount = messages.filter((message) => message.role !== 'bot').length;
+      return {
+        ...session,
+        title: session.title === '新的和好房间' && humanCount === 1 ? body.slice(0, 14) || session.title : session.title,
+        updatedAt: now,
+        messages,
+      };
+    });
     setReconcileChatInput('');
   }
 
   async function summarizeReconcileChat() {
-    const humanMessages = reconcileChatMessages.filter((message) => message.role !== 'bot');
+    const humanMessages = activeReconcileSession.messages.filter((message) => message.role !== 'bot');
     if (!humanMessages.length || agentLoading) {
       setAgentError('先让用户 A 和用户 B 说几句，桃桃才知道怎么帮你们。');
       return;
@@ -682,16 +799,21 @@ export default function Home() {
       const result = await requestReconcileAnalysis(
         `下面是情侣吵架聊天室里的对话。请你作为第三方智能调停机器人，像自然聊天一样总结双方真正想表达的内容，指出误会可能在哪里，给出现在最适合的一步，并生成一段其中一方可以温柔发给对方的话。\n\n${transcript}`,
       );
-      setReconcileChatMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: 'bot',
-          title: botName,
-          body: result.answer || result.repairAdvice,
-          createdAt: toDateTimeLocal(new Date()),
-        },
-      ]);
+      const now = toDateTimeLocal(new Date());
+      updateActiveReconcileSession((session) => ({
+        ...session,
+        updatedAt: now,
+        messages: [
+          ...session.messages,
+          {
+            id: crypto.randomUUID(),
+            role: 'bot',
+            title: botName,
+            body: result.answer || result.repairAdvice,
+            createdAt: now,
+          },
+        ],
+      }));
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
     } finally {
@@ -700,7 +822,18 @@ export default function Home() {
   }
 
   function resetReconcileChat() {
-    setReconcileChatMessages(starterReconcileChats);
+    const now = toDateTimeLocal(new Date());
+    updateActiveReconcileSession((session) => ({
+      ...session,
+      updatedAt: now,
+      messages: [
+        {
+          ...starterReconcileChats[0],
+          id: crypto.randomUUID(),
+          createdAt: now,
+        },
+      ],
+    }));
     setReconcileChatInput('');
     setAgentError('');
   }
@@ -964,7 +1097,60 @@ export default function Home() {
           </section>
         ) : activeTab === 'map' ? (
           <section className="reconcile-view" aria-label="情侣吵架分析智能体">
+            {reconcileScreen === 'sessions' ? (
+              <section className="reconcile-session-hub" aria-label="和好会话列表">
+                <section className="session-hero-card">
+                  <div>
+                    <span>桃桃聊天室</span>
+                    <h2>把话说开</h2>
+                    <p>每一次愿意沟通，都会被好好保存。</p>
+                  </div>
+                </section>
+
+                <button className="new-session-card" type="button" onClick={createReconcileSession}>
+                  <span>＋</span>
+                  <div>
+                    <strong>新建和好房间</strong>
+                    <p>用户 A、用户 B 和 {botName} 一起慢慢聊</p>
+                  </div>
+                  <em>›</em>
+                </button>
+
+                <section className="session-list" aria-label="最近会话">
+                  <div className="section-title">
+                    <div>
+                      <p>最近会话</p>
+                      <h2>继续上一次没有说完的话</h2>
+                    </div>
+                  </div>
+                  {reconcileSessions.map((session) => (
+                    <article className="session-card" key={session.id}>
+                      <button type="button" onClick={() => openReconcileSession(session.id)}>
+                        <div>
+                          <h3>{session.title}</h3>
+                          <time>{session.updatedAt.slice(0, 10)}</time>
+                        </div>
+                        <div className="session-avatars" aria-hidden="true">
+                          <span> A </span>
+                          <span> B </span>
+                          <span>桃</span>
+                        </div>
+                        <p>{getSessionPreview(session)}</p>
+                        <strong>继续聊 ›</strong>
+                      </button>
+                    </article>
+                  ))}
+                </section>
+              </section>
+            ) : (
             <section className="reconcile-chat-page" aria-label="和好三方聊天室">
+              <div className="room-back-row">
+                <button type="button" onClick={() => setReconcileScreen('sessions')} aria-label="返回会话列表">
+                  ‹ 会话
+                </button>
+                <span>{activeReconcileSession.title}</span>
+              </div>
+
               <section className="repair-stage chat-stage" aria-label="三十秒降温">
                 <div className="repair-stage-copy">
                   <span>{botName} 在房间里</span>
@@ -1040,6 +1226,7 @@ export default function Home() {
                 清空并重新聊
               </button>
             </section>
+            )}
           </section>
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="更多设置">

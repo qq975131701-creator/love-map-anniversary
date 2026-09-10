@@ -38,10 +38,19 @@ type ReconcileChatMessage = {
   createdAt: string;
 };
 
+type ReconcileSession = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ReconcileChatMessage[];
+};
+
 type SharedMemoryData = {
   events: Anniversary[];
   messages: SecretMessage[];
   reconcileChats: ReconcileChatMessage[];
+  reconcileSessions: ReconcileSession[];
   updatedAt?: string;
 };
 
@@ -151,6 +160,26 @@ function sanitizeReconcileChats(value: unknown): ReconcileChatMessage[] {
   });
 }
 
+function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, 80).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const messages = sanitizeReconcileChats(item.messages);
+    if (!messages.length) return [];
+
+    return [
+      {
+        id: sanitizeText(item.id, crypto.randomUUID(), 80),
+        title: sanitizeText(item.title, '新的和好房间', 80),
+        createdAt: sanitizeText(item.createdAt, messages[0]?.createdAt || new Date().toISOString(), 30),
+        updatedAt: sanitizeText(item.updatedAt, messages.at(-1)?.createdAt || new Date().toISOString(), 30),
+        messages,
+      },
+    ];
+  });
+}
+
 async function readSpace(space: string) {
   const store = getStore({ name: 'love-map-shared', consistency: 'strong' });
   const data = await store.get(`spaces/${space}.json`, { type: 'json' });
@@ -162,16 +191,21 @@ async function readSpace(space: string) {
       events: [],
       messages: [],
       reconcileChats: [],
+      reconcileSessions: [],
       updatedAt: null,
     };
   }
+
+  const reconcileSessions = sanitizeReconcileSessions(data.reconcileSessions);
+  const reconcileChats = sanitizeReconcileChats(data.reconcileChats);
 
   return {
     empty: false,
     space,
     events: sanitizeEvents(data.events),
     messages: sanitizeMessages(data.messages),
-    reconcileChats: sanitizeReconcileChats(data.reconcileChats),
+    reconcileChats,
+    reconcileSessions,
     updatedAt: sanitizeText(data.updatedAt, '', 40) || null,
   };
 }
@@ -186,6 +220,7 @@ async function writeSpace(space: string, payload: unknown) {
     events: sanitizeEvents(payload.events),
     messages: sanitizeMessages(payload.messages),
     reconcileChats: sanitizeReconcileChats(payload.reconcileChats),
+    reconcileSessions: sanitizeReconcileSessions(payload.reconcileSessions),
     updatedAt: new Date().toISOString(),
   };
 
