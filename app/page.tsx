@@ -345,6 +345,69 @@ function normalizePartnerProfile(value: unknown): PartnerProfileItem[] {
   });
 }
 
+function timeValue(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortReconcileMessages(messages: ReconcileChatMessage[]) {
+  return [...messages].sort((a, b) => timeValue(a.createdAt) - timeValue(b.createdAt));
+}
+
+function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSessions: ReconcileSession[]) {
+  if (!remoteSessions.length) return localSessions;
+
+  let changed = false;
+  const sessionMap = new Map(localSessions.map((session) => [session.id, session]));
+
+  remoteSessions.forEach((remoteSession) => {
+    const localSession = sessionMap.get(remoteSession.id);
+    if (!localSession) {
+      changed = true;
+      sessionMap.set(remoteSession.id, remoteSession);
+      return;
+    }
+
+    const localUpdated = timeValue(localSession.updatedAt);
+    const remoteUpdated = timeValue(remoteSession.updatedAt);
+    const localMessageIds = new Set(localSession.messages.map((message) => message.id));
+    const remoteMessageIds = new Set(remoteSession.messages.map((message) => message.id));
+
+    if (remoteUpdated > localUpdated) {
+      const localMessagesAfterRemote = localSession.messages.filter(
+        (message) => !remoteMessageIds.has(message.id) && timeValue(message.createdAt) > remoteUpdated,
+      );
+      const nextMessages = sortReconcileMessages([...remoteSession.messages, ...localMessagesAfterRemote]);
+      changed = true;
+      sessionMap.set(remoteSession.id, {
+        ...remoteSession,
+        messages: nextMessages,
+      });
+      return;
+    }
+
+    const remoteMessagesToAdd = remoteSession.messages.filter((message) => !localMessageIds.has(message.id));
+    if (!remoteMessagesToAdd.length) return;
+
+    changed = true;
+    const nextMessages = sortReconcileMessages([...localSession.messages, ...remoteMessagesToAdd]);
+    sessionMap.set(remoteSession.id, {
+      ...localSession,
+      updatedAt: timeValue(remoteSession.updatedAt) > timeValue(localSession.updatedAt) ? remoteSession.updatedAt : localSession.updatedAt,
+      messages: nextMessages,
+    });
+  });
+
+  const merged = [...sessionMap.values()].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
+  if (!changed) {
+    const currentOrder = localSessions.map((session) => session.id).join('|');
+    const nextOrder = merged.map((session) => session.id).join('|');
+    changed = currentOrder !== nextOrder;
+  }
+
+  return changed ? merged : localSessions;
+}
+
 export default function Home() {
   const [events, setEvents] = useState<Anniversary[]>(starterEvents);
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -591,9 +654,10 @@ export default function Home() {
   }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, reconcileSessions, spaceCode]);
 
   useEffect(() => {
-    if (!cloudHydrated || !['map', 'more'].includes(activeTab) || cloudStatus === 'saving' || savePendingRef.current) return;
+    if (!cloudHydrated || !['map', 'more'].includes(activeTab)) return;
 
-    const timer = window.setInterval(() => {
+    const syncSharedMemory = () => {
+      if (cloudStatus === 'saving' || savePendingRef.current) return;
       const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
       fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
         cache: 'no-store',
@@ -606,7 +670,7 @@ export default function Home() {
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
-            setReconcileSessions(payload.reconcileSessions);
+            setReconcileSessions((current) => mergeReconcileSessions(current, payload.reconcileSessions || []));
             setActiveReconcileSessionId((current) =>
               payload.reconcileSessions?.some((session) => session.id === current)
                 ? current
@@ -615,10 +679,13 @@ export default function Home() {
           }
         })
         .catch(() => undefined);
-    }, 6000);
+    };
+
+    syncSharedMemory();
+    const timer = window.setInterval(syncSharedMemory, activeTab === 'map' && reconcileScreen === 'room' ? 2500 : 6000);
 
     return () => window.clearInterval(timer);
-  }, [activeTab, cloudHydrated, cloudStatus, spaceCode]);
+  }, [activeTab, cloudHydrated, cloudStatus, reconcileScreen, spaceCode]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().getTime()), 60000);
