@@ -1,7 +1,18 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+/* eslint-disable @next/next/no-img-element -- User-uploaded Blob photos are served through Netlify Functions in a static export. */
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
+
+type PhotoAttachment = {
+  id: string;
+  key: string;
+  url: string;
+  name: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+};
 
 type Anniversary = {
   id: string;
@@ -10,6 +21,7 @@ type Anniversary = {
   category: string;
   note: string;
   emoji: string;
+  photos?: PhotoAttachment[];
 };
 
 type MessageKind = 'whisper' | 'capsule';
@@ -27,6 +39,7 @@ type SecretMessage = {
   anniversaryId?: string;
   locationName?: string;
   meetingLabel?: string;
+  photos?: PhotoAttachment[];
 };
 
 type TabId = 'home' | 'timeline' | 'letters' | 'map' | 'more';
@@ -89,6 +102,7 @@ type FuturePlanItem = {
   occasion: string;
   status: FuturePlanStatus;
   createdAt: string;
+  photos?: PhotoAttachment[];
 };
 
 const storageKey = 'love-map-anniversaries-v2';
@@ -408,6 +422,67 @@ function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSession
   return changed ? merged : localSessions;
 }
 
+function normalizePhotos(value: unknown): PhotoAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const key = typeof record.key === 'string' ? record.key : '';
+    const url = typeof record.url === 'string' ? record.url : '';
+    if (!key || !url) return [];
+
+    return [{
+      id: typeof record.id === 'string' ? record.id : key,
+      key,
+      url,
+      name: typeof record.name === 'string' ? record.name : 'photo',
+      contentType: typeof record.contentType === 'string' ? record.contentType : 'image/jpeg',
+      size: typeof record.size === 'number' ? record.size : 0,
+      createdAt: typeof record.createdAt === 'string' ? record.createdAt : toDateTimeLocal(new Date()),
+    }];
+  }).slice(0, 6);
+}
+
+function normalizeEvents(value: Anniversary[]) {
+  return value.map((event) => ({ ...event, photos: normalizePhotos(event.photos) }));
+}
+
+function normalizeMessages(value: SecretMessage[]) {
+  return value.map((message) => ({ ...message, photos: normalizePhotos(message.photos) }));
+}
+
+function normalizeFuturePlans(value: FuturePlanItem[]) {
+  return value.map((plan) => ({ ...plan, photos: normalizePhotos(plan.photos) }));
+}
+
+async function compressPhoto(file: File) {
+  if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size < 450_000) return file;
+
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('照片读取失败'));
+      element.src = imageUrl;
+    });
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    if (!context) return file;
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.84));
+    return blob && blob.size < file.size ? new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }) : file;
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 export default function Home() {
   const [events, setEvents] = useState<Anniversary[]>(starterEvents);
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -416,6 +491,7 @@ export default function Home() {
   const [category, setCategory] = useState('重要');
   const [note, setNote] = useState('');
   const [emoji, setEmoji] = useState('💗');
+  const [eventPhotos, setEventPhotos] = useState<PhotoAttachment[]>([]);
   const [previewDate, setPreviewDate] = useState(() => toLocalDate(new Date()));
   const [oldestFirst, setOldestFirst] = useState(true);
   const [selectedId, setSelectedId] = useState(starterEvents[0].id);
@@ -432,6 +508,7 @@ export default function Home() {
   const [messageTo, setMessageTo] = useState('小小塔大王');
   const [messageTitle, setMessageTitle] = useState('');
   const [messageBody, setMessageBody] = useState('');
+  const [messagePhotos, setMessagePhotos] = useState<PhotoAttachment[]>([]);
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('now');
   const [openAt, setOpenAt] = useState(() => toDateTimeLocal(new Date()));
   const [capsuleEventId, setCapsuleEventId] = useState(starterEvents[2].id);
@@ -447,6 +524,8 @@ export default function Home() {
   const [futureNote, setFutureNote] = useState('');
   const [futureOccasion, setFutureOccasion] = useState('下次见面');
   const [futureStatus, setFutureStatus] = useState<FuturePlanStatus>('todo');
+  const [futurePhotos, setFuturePhotos] = useState<PhotoAttachment[]>([]);
+  const [uploadingPhotoFor, setUploadingPhotoFor] = useState<'event' | 'message' | 'future' | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
   const [agentError, setAgentError] = useState('');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
@@ -480,16 +559,16 @@ export default function Home() {
     queueMicrotask(() => {
       try {
         const savedEvents = window.localStorage.getItem(storageKey);
-        if (savedEvents) setEvents(JSON.parse(savedEvents));
+        if (savedEvents) setEvents(normalizeEvents(JSON.parse(savedEvents)));
 
         const savedMessages = window.localStorage.getItem(messageStorageKey);
-        if (savedMessages) setMessages(JSON.parse(savedMessages));
+        if (savedMessages) setMessages(normalizeMessages(JSON.parse(savedMessages)));
 
         const savedProfile = window.localStorage.getItem(partnerProfileStorageKey);
         if (savedProfile) setPartnerProfile(normalizePartnerProfile(JSON.parse(savedProfile)));
 
         const savedPlans = window.localStorage.getItem(futurePlanStorageKey);
-        if (savedPlans) setFuturePlans(JSON.parse(savedPlans));
+        if (savedPlans) setFuturePlans(normalizeFuturePlans(JSON.parse(savedPlans)));
 
         const savedSpace = window.localStorage.getItem(spaceStorageKey);
         if (savedSpace) setSpaceCode(savedSpace);
@@ -576,10 +655,10 @@ export default function Home() {
       })
       .then((payload) => {
         if (!payload.empty) {
-          setEvents(payload.events);
-          setMessages(payload.messages);
+          setEvents(normalizeEvents(payload.events));
+          setMessages(normalizeMessages(payload.messages));
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
-          setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
+          setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
           const nextSessions = payload.reconcileSessions?.length
             ? payload.reconcileSessions
             : payload.reconcileChats?.length
@@ -668,7 +747,7 @@ export default function Home() {
         })
         .then((payload) => {
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
-          setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
+          setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
             setReconcileSessions((current) => mergeReconcileSessions(current, payload.reconcileSessions || []));
             setActiveReconcileSessionId((current) =>
@@ -822,6 +901,62 @@ export default function Home() {
     setReconcileScreen('room');
   }
 
+  async function uploadPhoto(file: File) {
+    const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+    const preparedFile = await compressPhoto(file);
+    if (preparedFile.size > 5_800_000) {
+      throw new Error('照片太大了，请换一张较小的照片');
+    }
+
+    const formData = new FormData();
+    formData.append('space', normalizedSpace);
+    formData.append('photo', preparedFile);
+
+    const response = await fetch('/api/photos', {
+      method: 'POST',
+      body: formData,
+    });
+    const contentType = response.headers.get('Content-Type') || '';
+    if (!contentType.includes('application/json')) {
+      throw new Error('当前预览没有启动照片接口，请用 netlify dev 或部署后测试上传');
+    }
+
+    const payload = await response.json() as PhotoAttachment & { error?: string };
+    if (!response.ok || payload.error) throw new Error(payload.error || '照片上传失败');
+    return payload;
+  }
+
+  async function handlePhotoInput(
+    event: ChangeEvent<HTMLInputElement>,
+    target: 'event' | 'message' | 'future',
+    photos: PhotoAttachment[],
+    setPhotos: (photos: PhotoAttachment[]) => void,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setCloudStatus('error');
+      setCloudMessage('请选择图片文件');
+      return;
+    }
+
+    setUploadingPhotoFor(target);
+    setCloudStatus('saving');
+    setCloudMessage('正在上传照片');
+    try {
+      const photo = await uploadPhoto(file);
+      setPhotos([photo, ...photos].slice(0, 6));
+      setCloudStatus('saved');
+      setCloudMessage('照片已上传');
+    } catch (error) {
+      setCloudStatus('error');
+      setCloudMessage(error instanceof Error ? error.message : '照片上传失败');
+    } finally {
+      setUploadingPhotoFor(null);
+    }
+  }
+
   function addEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedTitle = title.trim();
@@ -836,6 +971,7 @@ export default function Home() {
         category: category.trim() || '重要',
         note: note.trim(),
         emoji: emoji.trim() || '💗',
+        photos: eventPhotos,
       },
       ...current,
     ]);
@@ -844,6 +980,7 @@ export default function Home() {
     setTitle('');
     setNote('');
     setEmoji('💗');
+    setEventPhotos([]);
   }
 
   function removeEvent(id: string) {
@@ -861,6 +998,9 @@ export default function Home() {
     setPartnerProfile(starterPartnerProfile);
     setFuturePlans(starterFuturePlans);
     setHomeComposer(null);
+    setEventPhotos([]);
+    setMessagePhotos([]);
+    setFuturePhotos([]);
   }
 
   function addPartnerProfileItem(event: FormEvent<HTMLFormElement>) {
@@ -894,6 +1034,7 @@ export default function Home() {
         occasion: futureOccasion.trim() || '未来某天',
         status: futureStatus,
         createdAt: toDateTimeLocal(new Date()),
+        photos: futurePhotos,
       },
       ...current,
     ]);
@@ -902,6 +1043,7 @@ export default function Home() {
     setFutureNote('');
     setFutureOccasion('下次见面');
     setFutureStatus('todo');
+    setFuturePhotos([]);
   }
 
   function cycleFuturePlanStatus(id: string) {
@@ -979,12 +1121,14 @@ export default function Home() {
         anniversaryId: normalizedMode === 'anniversary' ? selectedCapsuleEvent?.id : undefined,
         meetingLabel: normalizedMode === 'meeting' ? '下次见面' : undefined,
         locationName: normalizedMode === 'location' ? locationName.trim() || '指定地点' : undefined,
+        photos: messagePhotos,
       },
       ...current,
     ]);
     setComposeOpen(false);
     setMessageTitle('');
     setMessageBody('');
+    setMessagePhotos([]);
   }
 
   function removeMessage(id: string) {
@@ -1142,6 +1286,42 @@ export default function Home() {
             ? '我们的房间与同步设置'
             : '记录属于我们的甜蜜回忆';
 
+  function renderPhotoPicker(
+    label: string,
+    target: 'event' | 'message' | 'future',
+    photos: PhotoAttachment[],
+    setPhotos: (photos: PhotoAttachment[]) => void,
+  ) {
+    return (
+      <div className="photo-picker">
+        <div>
+          <span>{label}</span>
+          <label>
+            {uploadingPhotoFor === target ? '上传中...' : '＋ 添加照片'}
+            <input
+              type="file"
+              accept="image/*"
+              disabled={uploadingPhotoFor === target}
+              onChange={(event) => void handlePhotoInput(event, target, photos, setPhotos)}
+            />
+          </label>
+        </div>
+        {photos.length > 0 && (
+          <div className="photo-strip">
+            {photos.map((photo) => (
+              <figure className="photo-thumb" key={photo.id}>
+                <img src={photo.url} alt={photo.name || '上传的照片'} />
+                <button type="button" onClick={() => setPhotos(photos.filter((item) => item.id !== photo.id))} aria-label={`移除 ${photo.name}`}>
+                  ×
+                </button>
+              </figure>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <main className={todaysEvents.length ? 'love-app celebrating' : 'love-app'}>
       <div className="phone-shell">
@@ -1203,7 +1383,11 @@ export default function Home() {
                         <em> · {event.category}</em>
                       </h2>
                       <div className={`memory-photo ${event.imageClass}`}>
-                        <strong>{event.emoji}</strong>
+                        {event.photos?.[0] ? (
+                          <img src={event.photos[0].url} alt={event.title} />
+                        ) : (
+                          <strong>{event.emoji}</strong>
+                        )}
                       </div>
                       <footer>
                         <span>{event.category}</span>
@@ -1265,6 +1449,7 @@ export default function Home() {
                   内容
                   <textarea value={messageBody} onChange={(event) => setMessageBody(event.target.value)} placeholder="写一封小纸条给 TA 吧" />
                 </label>
+                {renderPhotoPicker('附加照片', 'message', messagePhotos, setMessagePhotos)}
 
                 {messageKind === 'capsule' && (
                   <div className="delivery-grid">
@@ -1375,7 +1560,13 @@ export default function Home() {
                     </div>
                     <h3>{message.title}</h3>
                     <p>{message.body}</p>
-                    {message.kind === 'whisper' && message.body.length > 8 && (
+                    {message.photos?.length ? (
+                      <div className="letter-photo-grid">
+                        {message.photos.slice(0, 3).map((photo) => (
+                          <img src={photo.url} alt={photo.name || message.title} key={photo.id} />
+                        ))}
+                      </div>
+                    ) : message.kind === 'whisper' && message.body.length > 8 && (
                       <div className="letter-photo" aria-hidden="true" />
                     )}
                     <button type="button" aria-label={`删除 ${message.title}`} onClick={() => removeMessage(message.id)}>
@@ -1617,7 +1808,9 @@ export default function Home() {
                     <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
                       {item.status === 'done' ? '✓' : ''}
                     </button>
-                    <div className={`future-thumb thumb-${index + 1}`} aria-hidden="true" />
+                    <div className={`future-thumb thumb-${index + 1}`}>
+                      {item.photos?.[0] && <img src={item.photos[0].url} alt={item.title} />}
+                    </div>
                     <div>
                       <h3>{item.title}</h3>
                       {item.note && <p>{item.note}</p>}
@@ -1727,6 +1920,7 @@ export default function Home() {
                       小备注
                       <textarea value={futureNote} onChange={(event) => setFutureNote(event.target.value)} placeholder="写一句为什么想一起做" />
                     </label>
+                    {renderPhotoPicker('愿望配图', 'future', futurePhotos, setFuturePhotos)}
                     <button className="save-button" type="submit">
                       保存未来清单
                     </button>
@@ -1896,6 +2090,7 @@ export default function Home() {
                       小纸条
                       <textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="写一句只有你们懂的话" />
                     </label>
+                    {renderPhotoPicker('纪念照片', 'event', eventPhotos, setEventPhotos)}
                     <button className="save-button" type="submit">
                       保存到地图
                     </button>

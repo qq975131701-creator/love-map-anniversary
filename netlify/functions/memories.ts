@@ -1,6 +1,16 @@
 import { getStore } from '@netlify/blobs';
 import type { Config } from '@netlify/functions';
 
+type PhotoAttachment = {
+  id: string;
+  key: string;
+  url: string;
+  name: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+};
+
 type Anniversary = {
   id: string;
   title: string;
@@ -8,6 +18,7 @@ type Anniversary = {
   category: string;
   note: string;
   emoji: string;
+  photos?: PhotoAttachment[];
 };
 
 type MessageKind = 'whisper' | 'capsule';
@@ -25,6 +36,7 @@ type SecretMessage = {
   anniversaryId?: string;
   locationName?: string;
   meetingLabel?: string;
+  photos?: PhotoAttachment[];
 };
 
 type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
@@ -64,6 +76,7 @@ type FuturePlanItem = {
   occasion: string;
   status: FuturePlanStatus;
   createdAt: string;
+  photos?: PhotoAttachment[];
 };
 
 type SharedMemoryData = {
@@ -108,6 +121,29 @@ function sanitizeText(value: unknown, fallback = '', maxLength = 500) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) || fallback : fallback;
 }
 
+function sanitizePhotos(value: unknown): PhotoAttachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, 6).flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const key = sanitizeText(item.key, '', 560);
+    const url = sanitizeText(item.url, '', 700);
+    if (!key || !url || !key.startsWith('photos/')) return [];
+
+    return [
+      {
+        id: sanitizeText(item.id, key, 120),
+        key,
+        url,
+        name: sanitizeText(item.name, 'photo', 120),
+        contentType: sanitizeText(item.contentType, 'image/jpeg', 80),
+        size: typeof item.size === 'number' && Number.isFinite(item.size) ? Math.max(0, Math.round(item.size)) : 0,
+        createdAt: sanitizeText(item.createdAt, new Date().toISOString(), 40),
+      },
+    ];
+  });
+}
+
 function sanitizeEvents(value: unknown): Anniversary[] {
   if (!Array.isArray(value)) return [];
 
@@ -126,6 +162,7 @@ function sanitizeEvents(value: unknown): Anniversary[] {
         category: sanitizeText(item.category, '重要', 40),
         note: sanitizeText(item.note, '', 800),
         emoji: sanitizeText(item.emoji, '💗', 8),
+        photos: sanitizePhotos(item.photos),
       },
     ];
   });
@@ -155,6 +192,7 @@ function sanitizeMessages(value: unknown): SecretMessage[] {
         anniversaryId: sanitizeText(item.anniversaryId, '', 80) || undefined,
         locationName: sanitizeText(item.locationName, '', 80) || undefined,
         meetingLabel: sanitizeText(item.meetingLabel, '', 40) || undefined,
+        photos: sanitizePhotos(item.photos),
       },
     ];
   });
@@ -255,6 +293,7 @@ function sanitizeFuturePlans(value: unknown): FuturePlanItem[] {
         occasion: sanitizeText(item.occasion, '未来某天', 80),
         status,
         createdAt: sanitizeText(item.createdAt, new Date().toISOString(), 30),
+        photos: sanitizePhotos(item.photos),
       },
     ];
   });
