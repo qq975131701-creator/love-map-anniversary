@@ -46,14 +46,12 @@ type ReconcileSession = {
   messages: ReconcileChatMessage[];
 };
 
-type PartnerProfileCategory = 'like' | 'avoid' | 'comfort' | 'gift' | 'habit';
+type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 
 type PartnerProfileItem = {
   id: string;
-  category: PartnerProfileCategory;
-  title: string;
-  detail: string;
-  tags: string[];
+  owner: PartnerProfileOwner;
+  label: string;
   updatedAt: string;
 };
 
@@ -207,26 +205,32 @@ function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
 function sanitizePartnerProfile(value: unknown): PartnerProfileItem[] {
   if (!Array.isArray(value)) return [];
 
-  const categories = new Set(['like', 'avoid', 'comfort', 'gift', 'habit']);
+  const owners = new Set(['userA', 'userB', 'us']);
   return value.slice(0, 300).flatMap((item) => {
     if (!isRecord(item)) return [];
-    const title = sanitizeText(item.title, '', 120);
-    if (!title) return [];
-    const category = typeof item.category === 'string' && categories.has(item.category) ? item.category as PartnerProfileCategory : 'like';
-    const tags = Array.isArray(item.tags)
-      ? item.tags.flatMap((tag) => {
-          const text = sanitizeText(tag, '', 24);
-          return text ? [text] : [];
-        }).slice(0, 8)
+    const owner = typeof item.owner === 'string' && owners.has(item.owner) ? item.owner as PartnerProfileOwner : 'us';
+    const label = sanitizeText(item.label, sanitizeText(item.title, '', 40), 40);
+    const legacyTags = Array.isArray(item.tags)
+      ? item.tags.flatMap((tag, index) => {
+          const text = sanitizeText(tag, '', 40);
+          return text
+            ? [{
+                id: `${sanitizeText(item.id, crypto.randomUUID(), 72)}-${index}`,
+                owner,
+                label: text,
+                updatedAt: sanitizeText(item.updatedAt, new Date().toISOString(), 30),
+              }]
+            : [];
+        })
       : [];
+    if (legacyTags.length) return legacyTags;
+    if (!label) return [];
 
     return [
       {
         id: sanitizeText(item.id, crypto.randomUUID(), 80),
-        category,
-        title,
-        detail: sanitizeText(item.detail, '', 1000),
-        tags,
+        owner,
+        label,
         updatedAt: sanitizeText(item.updatedAt, new Date().toISOString(), 30),
       },
     ];

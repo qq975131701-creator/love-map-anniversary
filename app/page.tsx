@@ -74,13 +74,11 @@ type ReconcileSession = {
   updatedAt: string;
   messages: ReconcileChatMessage[];
 };
-type PartnerProfileCategory = 'like' | 'avoid' | 'comfort' | 'gift' | 'habit';
+type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 type PartnerProfileItem = {
   id: string;
-  category: PartnerProfileCategory;
-  title: string;
-  detail: string;
-  tags: string[];
+  owner: PartnerProfileOwner;
+  label: string;
   updatedAt: string;
 };
 type FuturePlanStatus = 'todo' | 'planned' | 'done';
@@ -188,12 +186,10 @@ const starterReconcileSessions: ReconcileSession[] = [
   },
 ];
 
-const partnerCategoryMeta: Record<PartnerProfileCategory, { label: string; icon: string }> = {
-  like: { label: '喜欢', icon: '♥' },
-  avoid: { label: '雷区', icon: '!' },
-  comfort: { label: '安慰方式', icon: '☕' },
-  gift: { label: '礼物', icon: '✦' },
-  habit: { label: '习惯', icon: '◦' },
+const partnerOwnerMeta: Record<PartnerProfileOwner, { label: string; short: string; icon: string }> = {
+  userA: { label: '用户 A', short: 'A', icon: 'A' },
+  userB: { label: '用户 B', short: 'B', icon: 'B' },
+  us: { label: '我们', short: '我们', icon: '♥' },
 };
 
 const futureStatusMeta: Record<FuturePlanStatus, { label: string; icon: string }> = {
@@ -204,29 +200,28 @@ const futureStatusMeta: Record<FuturePlanStatus, { label: string; icon: string }
 
 const starterPartnerProfile: PartnerProfileItem[] = [
   {
-    id: 'profile-like',
-    category: 'like',
-    title: '开心的时候喜欢奶茶和电影',
-    detail: '如果今天很累，甜一点的小东西会让心情变软。',
-    tags: ['奶茶', '电影', '甜食'],
+    id: 'profile-a-slow',
+    owner: 'userA',
+    label: '慢热',
     updatedAt: '2026-08-30T12:24',
   },
   {
-    id: 'profile-comfort',
-    category: 'comfort',
-    title: '低落时先抱抱，再慢慢讲道理',
-    detail: '先确认“我在”，比马上解决问题更重要。',
-    tags: ['抱抱', '认真听', '别催'],
+    id: 'profile-b-spicy',
+    owner: 'userB',
+    label: '爱吃辣',
     updatedAt: '2026-08-30T12:28',
   },
   {
-    id: 'profile-avoid',
-    category: 'avoid',
-    title: '不要冷战太久',
-    detail: '可以安静一会儿，但最好说清楚“我需要缓一下”。',
-    tags: ['不冷战', '别阴阳怪气'],
+    id: 'profile-us-walk',
+    owner: 'us',
+    label: '喜欢散步',
     updatedAt: '2026-08-30T12:32',
   },
+  { id: 'profile-a-photo', owner: 'userA', label: '爱拍照', updatedAt: '2026-08-30T12:34' },
+  { id: 'profile-b-movie', owner: 'userB', label: '电影', updatedAt: '2026-08-30T12:35' },
+  { id: 'profile-us-hotpot', owner: 'us', label: '火锅', updatedAt: '2026-08-30T12:36' },
+  { id: 'profile-b-sleep', owner: 'userB', label: '早睡', updatedAt: '2026-08-30T12:37' },
+  { id: 'profile-a-company', owner: 'userA', label: '需要陪伴感', updatedAt: '2026-08-30T12:38' },
 ];
 
 const starterFuturePlans: FuturePlanItem[] = [
@@ -309,6 +304,47 @@ function getMapPoint(index: number, total: number) {
   };
 }
 
+function normalizePartnerProfile(value: unknown): PartnerProfileItem[] {
+  if (!Array.isArray(value)) return starterPartnerProfile;
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const owner = record.owner === 'userA' || record.owner === 'userB' || record.owner === 'us' ? record.owner : 'us';
+    if (typeof record.label === 'string' && record.label.trim()) {
+      return [{
+        id: typeof record.id === 'string' ? record.id : crypto.randomUUID(),
+        owner,
+        label: record.label.trim(),
+        updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : toDateTimeLocal(new Date()),
+      }];
+    }
+
+    if (Array.isArray(record.tags)) {
+      return record.tags.flatMap((tag) => {
+        if (typeof tag !== 'string' || !tag.trim()) return [];
+        return [{
+          id: crypto.randomUUID(),
+          owner,
+          label: tag.trim(),
+          updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : toDateTimeLocal(new Date()),
+        }];
+      });
+    }
+
+    if (typeof record.title === 'string' && record.title.trim()) {
+      return [{
+        id: typeof record.id === 'string' ? record.id : crypto.randomUUID(),
+        owner,
+        label: record.title.trim(),
+        updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : toDateTimeLocal(new Date()),
+      }];
+    }
+
+    return [];
+  });
+}
+
 export default function Home() {
   const [events, setEvents] = useState<Anniversary[]>(starterEvents);
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -342,10 +378,8 @@ export default function Home() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
   const [homeComposer, setHomeComposer] = useState<'room' | 'profile' | 'future' | null>(null);
-  const [profileCategory, setProfileCategory] = useState<PartnerProfileCategory>('like');
-  const [profileTitle, setProfileTitle] = useState('');
-  const [profileDetail, setProfileDetail] = useState('');
-  const [profileTags, setProfileTags] = useState('');
+  const [profileOwner, setProfileOwner] = useState<PartnerProfileOwner>('userA');
+  const [profileLabel, setProfileLabel] = useState('');
   const [futureTitle, setFutureTitle] = useState('');
   const [futureNote, setFutureNote] = useState('');
   const [futureOccasion, setFutureOccasion] = useState('下次见面');
@@ -389,7 +423,7 @@ export default function Home() {
         if (savedMessages) setMessages(JSON.parse(savedMessages));
 
         const savedProfile = window.localStorage.getItem(partnerProfileStorageKey);
-        if (savedProfile) setPartnerProfile(JSON.parse(savedProfile));
+        if (savedProfile) setPartnerProfile(normalizePartnerProfile(JSON.parse(savedProfile)));
 
         const savedPlans = window.localStorage.getItem(futurePlanStorageKey);
         if (savedPlans) setFuturePlans(JSON.parse(savedPlans));
@@ -481,7 +515,7 @@ export default function Home() {
         if (!payload.empty) {
           setEvents(payload.events);
           setMessages(payload.messages);
-          setPartnerProfile(payload.partnerProfile?.length ? payload.partnerProfile : starterPartnerProfile);
+          setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
           const nextSessions = payload.reconcileSessions?.length
             ? payload.reconcileSessions
@@ -569,7 +603,7 @@ export default function Home() {
           return response.json() as Promise<SharedMemoryData>;
         })
         .then((payload) => {
-          setPartnerProfile(payload.partnerProfile?.length ? payload.partnerProfile : starterPartnerProfile);
+          setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? payload.futurePlans : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
             setReconcileSessions(payload.reconcileSessions);
@@ -670,7 +704,6 @@ export default function Home() {
   );
   const lockedCapsules = visibleMessages.filter((message) => !isMessageOpen(message));
   const openMessages = visibleMessages.filter((message) => isMessageOpen(message));
-  const recentPartnerProfile = partnerProfile.slice(0, 5);
   const roomDisplayName = spaceCode === defaultSpaceCode ? '我们的小窝' : spaceCode || '我们的小窝';
   const homeSyncLabel =
     cloudStatus === 'saved' || cloudStatus === 'ready' ? '已同步' : cloudStatus === 'loading' || cloudStatus === 'saving' ? '同步中' : '待同步';
@@ -765,29 +798,20 @@ export default function Home() {
 
   function addPartnerProfileItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const trimmedTitle = profileTitle.trim();
-    if (!trimmedTitle) return;
-    const tags = profileTags
-      .split(/[，,]/)
-      .map((tag) => tag.trim())
-      .filter(Boolean)
-      .slice(0, 5);
+    const trimmedLabel = profileLabel.trim();
+    if (!trimmedLabel) return;
 
     setPartnerProfile((current) => [
       {
         id: crypto.randomUUID(),
-        category: profileCategory,
-        title: trimmedTitle,
-        detail: profileDetail.trim(),
-        tags,
+        owner: profileOwner,
+        label: trimmedLabel,
         updatedAt: toDateTimeLocal(new Date()),
       },
       ...current,
     ]);
     setHomeComposer(null);
-    setProfileTitle('');
-    setProfileDetail('');
-    setProfileTags('');
+    setProfileLabel('');
   }
 
   function addFuturePlanItem(event: FormEvent<HTMLFormElement>) {
@@ -1472,66 +1496,39 @@ export default function Home() {
               </div>
             </article>
 
-            <section className="home-memory-card partner-profile-card" aria-label="TA 的小档案">
+            <section className="home-memory-card partner-profile-card" aria-label="双方性格爱好">
               <div className="section-title">
                 <span className="home-section-icon">♥</span>
                 <div>
-                  <p>TA 的小档案</p>
-                  <h2>关于 TA 的一切，我都想好好记住。</h2>
+                  <p>双方性格爱好</p>
+                  <h2>所有标签都可以自己定义</h2>
                 </div>
                 <button type="button" onClick={() => setHomeComposer('profile')}>
-                  编辑 ›
+                  ♡
                 </button>
               </div>
 
-              <div className="profile-board">
-                <div className="paper-note" aria-hidden="true">
-                  <span>很高兴<br />认识你 ♡</span>
-                </div>
-                <div className="profile-rows">
-                  {(['like', 'avoid', 'comfort'] as PartnerProfileCategory[]).map((category) => {
-                    const meta = partnerCategoryMeta[category];
-                    const items = partnerProfile.filter((item) => item.category === category);
-                    const tags = items.flatMap((item) => item.tags.length ? item.tags : [item.title]).slice(0, 3);
-                  return (
-                      <div className="profile-row" key={category}>
-                        <span>{meta.icon}</span>
-                        <strong>{meta.label}</strong>
-                        <div>
-                          {(tags.length ? tags : ['添加']).map((tag) => (
-                            <button
-                              type="button"
-                              key={tag}
-                              onClick={() => {
-                                setProfileCategory(category);
-                                setHomeComposer('profile');
-                              }}
-                            >
-                              {tag}
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileCategory(category);
-                            setHomeComposer('profile');
-                          }}
-                          aria-label={`添加${meta.label}`}
-                        >
-                          +
-                        </button>
-                      </div>
-                  );
-                })}
-                </div>
-                <article className="profile-quote">
-                  <span>▤</span>
-                  <p>{recentPartnerProfile[0]?.detail || '你笑起来的时候，整个世界都变温柔了。'}</p>
-                  <button type="button" onClick={() => setHomeComposer('profile')} aria-label="编辑小档案">
-                    ✎
+              <div className="tag-wall">
+                {partnerProfile.slice(0, 8).map((item, index) => (
+                  <button
+                    className={`couple-tag-note owner-${item.owner}`}
+                    style={{ '--tag-tilt': `${[-4, 3, -2, 4, -3, 2, -5, 3][index % 8]}deg` } as CSSProperties}
+                    type="button"
+                    key={item.id}
+                    onClick={() => {
+                      setProfileOwner(item.owner);
+                      setHomeComposer('profile');
+                    }}
+                  >
+                    <span>{partnerOwnerMeta[item.owner].short}</span>
+                    <strong>{item.label}</strong>
                   </button>
-                </article>
+                ))}
+                <button className="add-tag-note" type="button" onClick={() => setHomeComposer('profile')}>
+                  <span>＋</span>
+                  添加标签
+                </button>
+                <p>不同的我们，<br />更完整的爱。</p>
               </div>
             </section>
 
@@ -1599,11 +1596,11 @@ export default function Home() {
 
             {homeComposer === 'profile' && (
               <div className="modal-backdrop" role="presentation">
-                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加 TA 小档案">
+                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加双方性格爱好标签">
                   <div className="section-title">
                     <div>
-                      <p>TA 的小档案</p>
-                      <h2>记录一个关于 TA 的细节</h2>
+                      <p>双方性格爱好</p>
+                      <h2>添加一个自定义标签</h2>
                     </div>
                     <button type="button" onClick={() => setHomeComposer(null)}>
                       关闭
@@ -1611,27 +1608,19 @@ export default function Home() {
                   </div>
                   <form onSubmit={addPartnerProfileItem}>
                     <label>
-                      分类
-                      <select value={profileCategory} onChange={(event) => setProfileCategory(event.target.value as PartnerProfileCategory)}>
-                        {(Object.entries(partnerCategoryMeta) as [PartnerProfileCategory, { label: string; icon: string }][]).map(([category, meta]) => (
-                          <option key={category} value={category}>{meta.label}</option>
+                      归属
+                      <select value={profileOwner} onChange={(event) => setProfileOwner(event.target.value as PartnerProfileOwner)}>
+                        {(Object.entries(partnerOwnerMeta) as [PartnerProfileOwner, { label: string; short: string; icon: string }][]).map(([owner, meta]) => (
+                          <option key={owner} value={owner}>{meta.label}</option>
                         ))}
                       </select>
                     </label>
                     <label>
-                      标题
-                      <input value={profileTitle} onChange={(event) => setProfileTitle(event.target.value)} placeholder="例如：低落时先抱抱" />
-                    </label>
-                    <label>
-                      细节
-                      <textarea value={profileDetail} onChange={(event) => setProfileDetail(event.target.value)} placeholder="写下你想记住的细节" />
-                    </label>
-                    <label>
                       标签
-                      <input value={profileTags} onChange={(event) => setProfileTags(event.target.value)} placeholder="用逗号分隔，例如：奶茶,电影,抱抱" />
+                      <input value={profileLabel} onChange={(event) => setProfileLabel(event.target.value)} placeholder="例如：慢热 / 爱拍照 / 喜欢散步" />
                     </label>
                     <button className="save-button" type="submit">
-                      保存小档案
+                      保存标签
                     </button>
                   </form>
                 </section>
