@@ -47,6 +47,7 @@ type CloudStatus = 'idle' | 'loading' | 'ready' | 'saving' | 'saved' | 'local' |
 type SharedMemoryData = {
   empty?: boolean;
   space?: string;
+  roomSettings?: RoomSettings;
   events: Anniversary[];
   messages: SecretMessage[];
   reconcileChats?: ReconcileChatMessage[];
@@ -70,6 +71,11 @@ type ReconcileResult = {
   cuteReply: string;
   repairPlan: string;
   nextStep: string;
+};
+type RoomSettings = {
+  roomName: string;
+  userAName: string;
+  userBName: string;
 };
 type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
 type ReconcileChatMessage = {
@@ -111,9 +117,15 @@ const reconcileChatStorageKey = 'love-map-reconcile-chat-v1';
 const reconcileSessionStorageKey = 'love-map-reconcile-sessions-v1';
 const partnerProfileStorageKey = 'love-map-partner-profile-v1';
 const futurePlanStorageKey = 'love-map-future-plans-v1';
-const spaceStorageKey = 'love-map-space-code-v1';
-const defaultSpaceCode = 'dadata-xiaoxiao';
+const roomSettingsStorageKey = 'love-map-room-settings-v1';
+const legacySpaceStorageKey = 'love-map-space-code-v1';
+const sharedRoomKey = 'dadata-xiaoxiao';
 const botName = '桃桃';
+const defaultRoomSettings: RoomSettings = {
+  roomName: '我们的小窝',
+  userAName: '大大塔小王',
+  userBName: '小小塔大王',
+};
 
 const starterEvents: Anniversary[] = [
   {
@@ -121,7 +133,7 @@ const starterEvents: Anniversary[] = [
     title: '在一起 333 天',
     date: '2025-06-08',
     category: '在一起',
-    note: '大大塔小王 & 小小塔大王',
+    note: `${defaultRoomSettings.userAName} & ${defaultRoomSettings.userBName}`,
     emoji: '💗',
   },
   {
@@ -162,7 +174,7 @@ const starterMessages: SecretMessage[] = [
   {
     id: 'first-whisper',
     kind: 'whisper',
-    to: '小小塔大王',
+    to: defaultRoomSettings.userBName,
     title: '今天也想你',
     body: '这是一封会立刻出现在收件箱里的悄悄话。',
     createdAt: '2026-08-30T12:00',
@@ -185,7 +197,7 @@ const starterReconcileChats: ReconcileChatMessage[] = [
     id: 'bot-welcome',
     role: 'bot',
     title: botName,
-    body: '我在这里陪你们慢慢说。你们可以切换用户 A / 用户 B 发言；聊到一半时，点“桃桃总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。',
+    body: `我在这里陪你们慢慢说。你们可以切换 ${defaultRoomSettings.userAName} / ${defaultRoomSettings.userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
     createdAt: '2026-08-30T12:18',
   },
 ];
@@ -456,6 +468,20 @@ function normalizeFuturePlans(value: FuturePlanItem[]) {
   return value.map((plan) => ({ ...plan, photos: normalizePhotos(plan.photos) }));
 }
 
+function normalizeRoomSettings(value: unknown): RoomSettings {
+  if (!value || typeof value !== 'object') return defaultRoomSettings;
+  const record = value as Record<string, unknown>;
+  return {
+    roomName: typeof record.roomName === 'string' && record.roomName.trim() ? record.roomName.trim().slice(0, 40) : defaultRoomSettings.roomName,
+    userAName: typeof record.userAName === 'string' && record.userAName.trim() ? record.userAName.trim().slice(0, 24) : defaultRoomSettings.userAName,
+    userBName: typeof record.userBName === 'string' && record.userBName.trim() ? record.userBName.trim().slice(0, 24) : defaultRoomSettings.userBName,
+  };
+}
+
+function sameRoomSettings(left: RoomSettings, right: RoomSettings) {
+  return left.roomName === right.roomName && left.userAName === right.userAName && left.userBName === right.userBName;
+}
+
 async function compressPhoto(file: File) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size < 450_000) return file;
 
@@ -498,14 +524,20 @@ export default function Home() {
   const [messages, setMessages] = useState<SecretMessage[]>(starterMessages);
   const [partnerProfile, setPartnerProfile] = useState<PartnerProfileItem[]>(starterPartnerProfile);
   const [futurePlans, setFuturePlans] = useState<FuturePlanItem[]>(starterFuturePlans);
-  const [spaceCode, setSpaceCode] = useState(defaultSpaceCode);
+  const [roomSettings, setRoomSettings] = useState<RoomSettings>(defaultRoomSettings);
   const [cloudStatus, setCloudStatus] = useState<CloudStatus>('idle');
   const [cloudMessage, setCloudMessage] = useState('共同空间准备中');
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioGainRef = useRef<GainNode | null>(null);
+  const audioNodesRef = useRef<OscillatorNode[]>([]);
+  const musicTimerRef = useRef<number | null>(null);
+  const [musicEnabled, setMusicEnabled] = useState(true);
+  const [musicPlaying, setMusicPlaying] = useState(false);
   const [messageKind, setMessageKind] = useState<MessageKind>('whisper');
-  const [messageTo, setMessageTo] = useState('小小塔大王');
+  const [messageTo, setMessageTo] = useState('');
   const [messageTitle, setMessageTitle] = useState('');
   const [messageBody, setMessageBody] = useState('');
   const [messagePhotos, setMessagePhotos] = useState<PhotoAttachment[]>([]);
@@ -570,8 +602,15 @@ export default function Home() {
         const savedPlans = window.localStorage.getItem(futurePlanStorageKey);
         if (savedPlans) setFuturePlans(normalizeFuturePlans(JSON.parse(savedPlans)));
 
-        const savedSpace = window.localStorage.getItem(spaceStorageKey);
-        if (savedSpace) setSpaceCode(savedSpace);
+        const savedRoomSettings = window.localStorage.getItem(roomSettingsStorageKey);
+        if (savedRoomSettings) {
+          setRoomSettings(normalizeRoomSettings(JSON.parse(savedRoomSettings)));
+        } else {
+          const legacySpace = window.localStorage.getItem(legacySpaceStorageKey);
+          if (legacySpace && legacySpace !== sharedRoomKey) {
+            setRoomSettings({ ...defaultRoomSettings, roomName: legacySpace });
+          }
+        }
 
         const storedSessions = JSON.parse(window.localStorage.getItem(reconcileSessionStorageKey) || '[]') as ReconcileSession[];
         if (storedSessions.length) {
@@ -597,6 +636,7 @@ export default function Home() {
         setPartnerProfile(starterPartnerProfile);
         setFuturePlans(starterFuturePlans);
         setReconcileSessions(starterReconcileSessions);
+        setRoomSettings(defaultRoomSettings);
       } finally {
         setLocalHydrated(true);
       }
@@ -630,12 +670,12 @@ export default function Home() {
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(spaceStorageKey, spaceCode);
-  }, [localHydrated, spaceCode]);
+    window.localStorage.setItem(roomSettingsStorageKey, JSON.stringify(roomSettings));
+  }, [localHydrated, roomSettings]);
 
   useEffect(() => {
     if (!localHydrated) return;
-    const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+    const normalizedSpace = sharedRoomKey;
     const controller = new AbortController();
 
     queueMicrotask(() => {
@@ -657,6 +697,7 @@ export default function Home() {
         if (!payload.empty) {
           setEvents(normalizeEvents(payload.events));
           setMessages(normalizeMessages(payload.messages));
+          setRoomSettings(normalizeRoomSettings(payload.roomSettings));
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
           const nextSessions = payload.reconcileSessions?.length
@@ -689,7 +730,7 @@ export default function Home() {
       });
 
     return () => controller.abort();
-  }, [localHydrated, spaceCode]);
+  }, [localHydrated]);
 
   useEffect(() => {
     if (!localHydrated || !cloudHydrated) return;
@@ -701,7 +742,7 @@ export default function Home() {
     savePendingRef.current = true;
 
     saveTimerRef.current = window.setTimeout(() => {
-      const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+      const normalizedSpace = sharedRoomKey;
       setCloudStatus('saving');
       setCloudMessage('正在保存到共同空间');
 
@@ -710,7 +751,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ events, messages, reconcileSessions, partnerProfile, futurePlans }),
+        body: JSON.stringify({ roomSettings, events, messages, reconcileSessions, partnerProfile, futurePlans }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('保存失败');
@@ -730,14 +771,14 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, reconcileSessions, spaceCode]);
+  }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, reconcileSessions, roomSettings]);
 
   useEffect(() => {
-    if (!cloudHydrated || !['map', 'more'].includes(activeTab)) return;
+    if (!cloudHydrated) return;
 
     const syncSharedMemory = () => {
       if (cloudStatus === 'saving' || savePendingRef.current) return;
-      const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+      const normalizedSpace = sharedRoomKey;
       fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
         cache: 'no-store',
       })
@@ -746,6 +787,10 @@ export default function Home() {
           return response.json() as Promise<SharedMemoryData>;
         })
         .then((payload) => {
+          if (homeComposer !== 'room') {
+            const nextRoomSettings = normalizeRoomSettings(payload.roomSettings);
+            setRoomSettings((current) => sameRoomSettings(current, nextRoomSettings) ? current : nextRoomSettings);
+          }
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
@@ -764,7 +809,7 @@ export default function Home() {
     const timer = window.setInterval(syncSharedMemory, activeTab === 'map' && reconcileScreen === 'room' ? 2500 : 6000);
 
     return () => window.clearInterval(timer);
-  }, [activeTab, cloudHydrated, cloudStatus, reconcileScreen, spaceCode]);
+  }, [activeTab, cloudHydrated, cloudStatus, homeComposer, reconcileScreen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().getTime()), 60000);
@@ -850,17 +895,59 @@ export default function Home() {
   );
   const lockedCapsules = visibleMessages.filter((message) => !isMessageOpen(message));
   const openMessages = visibleMessages.filter((message) => isMessageOpen(message));
-  const roomDisplayName = spaceCode === defaultSpaceCode ? '我们的小窝' : spaceCode || '我们的小窝';
+  const roomDisplayName = roomSettings.roomName || defaultRoomSettings.roomName;
+  const userAName = roomSettings.userAName || defaultRoomSettings.userAName;
+  const userBName = roomSettings.userBName || defaultRoomSettings.userBName;
   const homeSyncLabel =
     cloudStatus === 'saved' || cloudStatus === 'ready' ? '已同步' : cloudStatus === 'loading' || cloudStatus === 'saving' ? '同步中' : '待同步';
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
 
+  function getRoleName(role: ReconcileRoomRole) {
+    if (role === 'userA') return userAName;
+    if (role === 'userB') return userBName;
+    return botName;
+  }
+
+  function getOwnerLabel(owner: PartnerProfileOwner) {
+    if (owner === 'userA') return userAName;
+    if (owner === 'userB') return userBName;
+    return '我们';
+  }
+
+  function getOwnerShort(owner: PartnerProfileOwner) {
+    if (owner === 'userA') return userAName.slice(0, 1) || 'A';
+    if (owner === 'userB') return userBName.slice(0, 1) || 'B';
+    return '我们';
+  }
+
+  function createWelcomeChat(createdAt: string): ReconcileChatMessage {
+    return {
+      id: crypto.randomUUID(),
+      role: 'bot',
+      title: botName,
+      body: `我在这里陪你们慢慢说。你们可以切换 ${userAName} / ${userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
+      createdAt,
+    };
+  }
+
+  function toggleMusic() {
+    if (musicPlaying) {
+      setMusicEnabled(false);
+      stopAudioNodes();
+      setMusicPlaying(false);
+      return;
+    }
+
+    setMusicEnabled(true);
+    void startMusic();
+  }
+
   function getSessionPreview(session: ReconcileSession) {
     const lastMessage = session.messages.at(-1);
     if (!lastMessage) return '还没有开始聊天';
-    const speaker = lastMessage.role === 'userA' ? '用户A' : lastMessage.role === 'userB' ? '用户B' : botName;
+    const speaker = getRoleName(lastMessage.role);
     return `${speaker}：${lastMessage.body}`;
   }
 
@@ -878,13 +965,7 @@ export default function Home() {
       title: '新的和好房间',
       createdAt: now,
       updatedAt: now,
-      messages: [
-        {
-          ...starterReconcileChats[0],
-          id: crypto.randomUUID(),
-          createdAt: now,
-        },
-      ],
+      messages: [createWelcomeChat(now)],
     };
 
     setReconcileSessions((current) => [session, ...current]);
@@ -901,8 +982,90 @@ export default function Home() {
     setReconcileScreen('room');
   }
 
+  const stopAudioNodes = useCallback(() => {
+    if (musicTimerRef.current) {
+      window.clearInterval(musicTimerRef.current);
+      musicTimerRef.current = null;
+    }
+    audioNodesRef.current.forEach((node) => {
+      try {
+        node.stop();
+      } catch {
+        // The oscillator may already be stopped by the browser.
+      }
+      node.disconnect();
+    });
+    audioNodesRef.current = [];
+    audioGainRef.current?.disconnect();
+    audioGainRef.current = null;
+    void audioContextRef.current?.close();
+    audioContextRef.current = null;
+  }, []);
+
+  const startMusic = useCallback(async () => {
+    if (audioContextRef.current) return;
+    const AudioContextConstructor =
+      window.AudioContext ||
+      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) return;
+
+    const context = new AudioContextConstructor();
+    const gain = context.createGain();
+    gain.gain.value = 0.035;
+    gain.connect(context.destination);
+
+    const lead = context.createOscillator();
+    const harmony = context.createOscillator();
+    lead.type = 'sine';
+    harmony.type = 'triangle';
+    lead.frequency.value = 392;
+    harmony.frequency.value = 196;
+    lead.connect(gain);
+    harmony.connect(gain);
+    lead.start();
+    harmony.start();
+
+    audioContextRef.current = context;
+    audioGainRef.current = gain;
+    audioNodesRef.current = [lead, harmony];
+
+    const notes = [392, 440, 523.25, 493.88, 440, 392, 329.63, 349.23];
+    let index = 0;
+    const playStep = () => {
+      const now = context.currentTime;
+      const note = notes[index % notes.length];
+      lead.frequency.setTargetAtTime(note, now, 0.08);
+      harmony.frequency.setTargetAtTime(note / 2, now, 0.12);
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0.045, now + 0.18);
+      gain.gain.linearRampToValueAtTime(0.026, now + 0.9);
+      index += 1;
+    };
+
+    playStep();
+    musicTimerRef.current = window.setInterval(playStep, 950);
+
+    try {
+      await context.resume();
+      setMusicPlaying(context.state === 'running');
+    } catch {
+      setMusicPlaying(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (musicEnabled) {
+      void startMusic();
+    } else {
+      stopAudioNodes();
+    }
+
+    return () => stopAudioNodes();
+  }, [musicEnabled, startMusic, stopAudioNodes]);
+
   async function uploadPhoto(file: File) {
-    const normalizedSpace = spaceCode.trim() || defaultSpaceCode;
+    const normalizedSpace = sharedRoomKey;
     const preparedFile = await compressPhoto(file);
     if (preparedFile.size > 5_800_000) {
       throw new Error('照片太大了，请换一张较小的照片');
@@ -1112,7 +1275,7 @@ export default function Home() {
       {
         id,
         kind: messageKind,
-        to: messageTo.trim() || (messageKind === 'capsule' ? '未来的我们' : '对方'),
+        to: messageTo.trim() || (messageKind === 'capsule' ? '未来的我们' : userBName),
         title: trimmedTitle || (messageKind === 'capsule' ? '给未来的一封信' : '悄悄话'),
         body: trimmedBody,
         createdAt: toDateTimeLocal(new Date()),
@@ -1218,13 +1381,13 @@ export default function Home() {
   async function summarizeReconcileChat() {
     const humanMessages = activeReconcileSession.messages.filter((message) => message.role !== 'bot');
     if (!humanMessages.length || agentLoading) {
-      setAgentError('先让用户 A 和用户 B 说几句，桃桃才知道怎么帮你们。');
+      setAgentError(`先让 ${userAName} 和 ${userBName} 说几句，${botName} 才知道怎么帮你们。`);
       return;
     }
 
     const transcript = humanMessages
       .slice(-40)
-      .map((message) => `${message.role === 'userA' ? '用户A' : '用户B'}：${message.body}`)
+      .map((message) => `${getRoleName(message.role)}：${message.body}`)
       .join('\n');
 
     setAgentLoading(true);
@@ -1261,13 +1424,7 @@ export default function Home() {
     updateActiveReconcileSession((session) => ({
       ...session,
       updatedAt: now,
-      messages: [
-        {
-          ...starterReconcileChats[0],
-          id: crypto.randomUUID(),
-          createdAt: now,
-        },
-      ],
+      messages: [createWelcomeChat(now)],
     }));
     setReconcileChatInput('');
     setAgentError('');
@@ -1344,10 +1501,20 @@ export default function Home() {
               ♥
             </button>
           ) : (
-            <div className="profile-badge" aria-label="纪念日主人">
-              <span className="avatar avatar-one">大</span>
-              <strong>大大塔小王</strong>
-              <em>🌸</em>
+            <div className="header-actions">
+              <button
+                className={musicPlaying ? 'music-toggle playing' : 'music-toggle'}
+                type="button"
+                aria-label={musicPlaying ? '关闭背景音乐' : '打开背景音乐'}
+                onClick={toggleMusic}
+              >
+                {musicPlaying ? '♪' : '音'}
+              </button>
+              <div className="profile-badge" aria-label="纪念日主人">
+                <span className="avatar avatar-one">{userAName.slice(0, 1) || 'A'}</span>
+                <strong>{userAName}</strong>
+                <em>🌸</em>
+              </div>
             </div>
           )}
         </header>
@@ -1439,7 +1606,7 @@ export default function Home() {
               <form className="message-composer" onSubmit={sendMessage}>
                 <label>
                   收给谁
-                  <input value={messageTo} onChange={(event) => setMessageTo(event.target.value)} placeholder="小小塔大王 / 未来的我们" />
+                  <input value={messageTo} onChange={(event) => setMessageTo(event.target.value)} placeholder={`${userBName} / 未来的我们`} />
                 </label>
                 <label>
                   标题
@@ -1593,7 +1760,7 @@ export default function Home() {
                   <span>＋</span>
                   <div>
                     <strong>新建和好房间</strong>
-                    <p>用户 A、用户 B 和 {botName} 一起慢慢聊</p>
+                    <p>{userAName}、{userBName} 和 {botName} 一起慢慢聊</p>
                   </div>
                   <em>›</em>
                 </button>
@@ -1637,7 +1804,7 @@ export default function Home() {
                 <div className="repair-stage-copy">
                   <span>{botName} 在房间里</span>
                   <h2>慢慢说</h2>
-                  <p>用户 A 和用户 B 都可以发言，需要时让 {botName} 总结。</p>
+                  <p>{userAName} 和 {userBName} 都可以发言，需要时让 {botName} 总结。</p>
                 </div>
                 <div className="breathing-circle compact" aria-hidden="true">
                   <strong>30</strong>
@@ -1648,8 +1815,8 @@ export default function Home() {
               <div className="room-toolbar" aria-label="聊天室操作">
                 <div className="speaker-switch" aria-label="当前发言人">
                   {([
-                    ['userA', '用户 A'],
-                    ['userB', '用户 B'],
+                    ['userA', userAName],
+                    ['userB', userBName],
                   ] as const).map(([role, label]) => (
                     <button
                       key={role}
@@ -1670,7 +1837,7 @@ export default function Home() {
                 {reconcileChatMessages.map((message) => (
                   <article className={`chat-bubble ${message.role}`} key={message.id}>
                     <span>
-                      {message.role === 'userA' ? '用户 A' : message.role === 'userB' ? '用户 B' : message.title || botName}
+                      {message.role === 'bot' ? message.title || botName : getRoleName(message.role)}
                     </span>
                     <p>{message.body}</p>
                   </article>
@@ -1696,7 +1863,7 @@ export default function Home() {
                 <input
                   value={reconcileChatInput}
                   onChange={(event) => setReconcileChatInput(event.target.value)}
-                  placeholder={`${reconcileSpeaker === 'userA' ? '用户 A' : '用户 B'} 说点什么...`}
+                  placeholder={`${getRoleName(reconcileSpeaker)} 说点什么...`}
                   aria-label="聊天室发言"
                 />
                 <button type="submit" disabled={!reconcileChatInput.trim()}>
@@ -1778,7 +1945,7 @@ export default function Home() {
                       setHomeComposer('profile');
                     }}
                   >
-                    <span>{partnerOwnerMeta[item.owner].short}</span>
+                    <span>{getOwnerShort(item.owner)}</span>
                     <strong>{item.label}</strong>
                   </button>
                 ))}
@@ -1833,7 +2000,7 @@ export default function Home() {
                   <div className="section-title">
                     <div>
                       <p>我们的房间</p>
-                      <h2>改一个只有你们懂的房间名称</h2>
+                      <h2>改房间名称和两个人的名字</h2>
                     </div>
                     <button type="button" onClick={() => setHomeComposer(null)}>
                       关闭
@@ -1842,13 +2009,29 @@ export default function Home() {
                   <label>
                     房间名称
                     <input
-                      value={spaceCode}
-                      onChange={(event) => setSpaceCode(event.target.value)}
-                      placeholder="输入你们共同约定的房间名称"
+                      value={roomSettings.roomName}
+                      onChange={(event) => setRoomSettings((current) => ({ ...current, roomName: event.target.value }))}
+                      placeholder="例如：我们的小窝"
+                    />
+                  </label>
+                  <label>
+                    用户 A 名字
+                    <input
+                      value={roomSettings.userAName}
+                      onChange={(event) => setRoomSettings((current) => ({ ...current, userAName: event.target.value }))}
+                      placeholder="输入用户 A 的名字"
+                    />
+                  </label>
+                  <label>
+                    用户 B 名字
+                    <input
+                      value={roomSettings.userBName}
+                      onChange={(event) => setRoomSettings((current) => ({ ...current, userBName: event.target.value }))}
+                      placeholder="输入用户 B 的名字"
                     />
                   </label>
                   <button className="save-button" type="button" onClick={() => setHomeComposer(null)}>
-                    保存房间名称
+                    保存设置
                   </button>
                 </section>
               </div>
@@ -1870,8 +2053,8 @@ export default function Home() {
                     <label>
                       归属
                       <select value={profileOwner} onChange={(event) => setProfileOwner(event.target.value as PartnerProfileOwner)}>
-                        {(Object.entries(partnerOwnerMeta) as [PartnerProfileOwner, { label: string; short: string; icon: string }][]).map(([owner, meta]) => (
-                          <option key={owner} value={owner}>{meta.label}</option>
+                        {(Object.keys(partnerOwnerMeta) as PartnerProfileOwner[]).map((owner) => (
+                          <option key={owner} value={owner}>{getOwnerLabel(owner)}</option>
                         ))}
                       </select>
                     </label>
@@ -1935,7 +2118,7 @@ export default function Home() {
               <div className="mood-box happy">
                 <span>🌸</span>
                 <strong>开心</strong>
-                <p>大大塔小王</p>
+                <p>{userAName}</p>
               </div>
               <div className="mood-divider">
                 <span />
@@ -1945,11 +2128,11 @@ export default function Home() {
               <div className="mood-box cloud">
                 <span>☁️</span>
                 <strong>{todaysEvents.length ? '超想庆祝' : '还没记心情'}</strong>
-                <p>小小塔大王</p>
+                <p>{userBName}</p>
               </div>
               <footer>
                 <span>♥</span>
-                <strong>戳一戳 小小塔大王</strong>
+                <strong>戳一戳 {userBName}</strong>
                 <em>{events.length} 次</em>
               </footer>
             </section>

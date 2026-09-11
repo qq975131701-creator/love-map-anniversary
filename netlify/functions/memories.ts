@@ -79,7 +79,14 @@ type FuturePlanItem = {
   photos?: PhotoAttachment[];
 };
 
+type RoomSettings = {
+  roomName: string;
+  userAName: string;
+  userBName: string;
+};
+
 type SharedMemoryData = {
+  roomSettings: RoomSettings;
   events: Anniversary[];
   messages: SecretMessage[];
   reconcileChats: ReconcileChatMessage[];
@@ -94,6 +101,12 @@ const headers = {
   'Access-Control-Allow-Methods': 'GET, PUT, POST, OPTIONS',
   'Access-Control-Allow-Origin': '*',
   'Content-Type': 'application/json; charset=utf-8',
+};
+
+const defaultRoomSettings: RoomSettings = {
+  roomName: '我们的小窝',
+  userAName: '大大塔小王',
+  userBName: '小小塔大王',
 };
 
 function json(data: unknown, init?: ResponseInit) {
@@ -142,6 +155,16 @@ function sanitizePhotos(value: unknown): PhotoAttachment[] {
       },
     ];
   });
+}
+
+function sanitizeRoomSettings(value: unknown): RoomSettings {
+  if (!isRecord(value)) return defaultRoomSettings;
+
+  return {
+    roomName: sanitizeText(value.roomName, defaultRoomSettings.roomName, 40),
+    userAName: sanitizeText(value.userAName, defaultRoomSettings.userAName, 24),
+    userBName: sanitizeText(value.userBName, defaultRoomSettings.userBName, 24),
+  };
 }
 
 function sanitizeEvents(value: unknown): Anniversary[] {
@@ -307,6 +330,7 @@ async function readSpace(space: string) {
     return {
       empty: true,
       space,
+      roomSettings: defaultRoomSettings,
       events: [],
       messages: [],
       reconcileChats: [],
@@ -323,6 +347,7 @@ async function readSpace(space: string) {
   return {
     empty: false,
     space,
+    roomSettings: sanitizeRoomSettings(data.roomSettings),
     events: sanitizeEvents(data.events),
     messages: sanitizeMessages(data.messages),
     reconcileChats,
@@ -340,6 +365,7 @@ async function writeSpace(space: string, payload: unknown) {
 
   const store = getStore({ name: 'love-map-shared', consistency: 'strong' });
   const data: SharedMemoryData = {
+    roomSettings: sanitizeRoomSettings(payload.roomSettings),
     events: sanitizeEvents(payload.events),
     messages: sanitizeMessages(payload.messages),
     reconcileChats: sanitizeReconcileChats(payload.reconcileChats),
