@@ -55,6 +55,7 @@ type ReconcileSession = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  clearedAt?: string;
   messages: ReconcileChatMessage[];
 };
 
@@ -257,6 +258,7 @@ function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
         title: sanitizeText(item.title, '新的和好房间', 80),
         createdAt: sanitizeText(item.createdAt, messages[0]?.createdAt || new Date().toISOString(), 30),
         updatedAt: sanitizeText(item.updatedAt, messages.at(-1)?.createdAt || new Date().toISOString(), 30),
+        clearedAt: sanitizeText(item.clearedAt, '', 30) || undefined,
         messages,
       },
     ];

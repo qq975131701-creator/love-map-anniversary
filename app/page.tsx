@@ -91,6 +91,7 @@ type ReconcileSession = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  clearedAt?: string;
   messages: ReconcileChatMessage[];
 };
 type PartnerProfileOwner = 'userA' | 'userB' | 'us';
@@ -396,6 +397,8 @@ function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSession
 
     const localUpdated = timeValue(localSession.updatedAt);
     const remoteUpdated = timeValue(remoteSession.updatedAt);
+    const localClearedAt = timeValue(localSession.clearedAt || '');
+    const remoteClearedAt = timeValue(remoteSession.clearedAt || '');
     const localMessageIds = new Set(localSession.messages.map((message) => message.id));
     const remoteMessageIds = new Set(remoteSession.messages.map((message) => message.id));
 
@@ -407,10 +410,13 @@ function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSession
       changed = true;
       sessionMap.set(remoteSession.id, {
         ...remoteSession,
+        clearedAt: remoteClearedAt >= localClearedAt ? remoteSession.clearedAt : localSession.clearedAt,
         messages: nextMessages,
       });
       return;
     }
+
+    if (localClearedAt && remoteUpdated <= localClearedAt) return;
 
     const remoteMessagesToAdd = remoteSession.messages.filter((message) => !localMessageIds.has(message.id));
     if (!remoteMessagesToAdd.length) return;
@@ -420,6 +426,7 @@ function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSession
     sessionMap.set(remoteSession.id, {
       ...localSession,
       updatedAt: timeValue(remoteSession.updatedAt) > timeValue(localSession.updatedAt) ? remoteSession.updatedAt : localSession.updatedAt,
+      clearedAt: remoteClearedAt > localClearedAt ? remoteSession.clearedAt : localSession.clearedAt,
       messages: nextMessages,
     });
   });
@@ -530,6 +537,7 @@ export default function Home() {
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const saveTimerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
+  const skipNextSaveRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioGainRef = useRef<GainNode | null>(null);
   const audioNodesRef = useRef<OscillatorNode[]>([]);
@@ -739,6 +747,12 @@ export default function Home() {
       window.clearTimeout(saveTimerRef.current);
     }
 
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      savePendingRef.current = false;
+      return;
+    }
+
     savePendingRef.current = true;
 
     saveTimerRef.current = window.setTimeout(() => {
@@ -787,6 +801,7 @@ export default function Home() {
           return response.json() as Promise<SharedMemoryData>;
         })
         .then((payload) => {
+          skipNextSaveRef.current = true;
           if (homeComposer !== 'room') {
             const nextRoomSettings = normalizeRoomSettings(payload.roomSettings);
             setRoomSettings((current) => sameRoomSettings(current, nextRoomSettings) ? current : nextRoomSettings);
@@ -1424,6 +1439,7 @@ export default function Home() {
     updateActiveReconcileSession((session) => ({
       ...session,
       updatedAt: now,
+      clearedAt: now,
       messages: [createWelcomeChat(now)],
     }));
     setReconcileChatInput('');
