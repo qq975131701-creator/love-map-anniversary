@@ -250,7 +250,6 @@ function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
   return value.slice(0, 80).flatMap((item) => {
     if (!isRecord(item)) return [];
     const messages = sanitizeReconcileChats(item.messages);
-    if (!messages.length) return [];
 
     return [
       {

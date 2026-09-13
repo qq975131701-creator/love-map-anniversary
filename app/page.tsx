@@ -94,6 +94,13 @@ type ReconcileSession = {
   clearedAt?: string;
   messages: ReconcileChatMessage[];
 };
+type ReconcileChatSyncPayload = {
+  initialized: boolean;
+  sessionId: string;
+  clearedAt: string | null;
+  messages: ReconcileChatMessage[];
+  error?: string;
+};
 type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 type PartnerProfileItem = {
   id: string;
@@ -381,7 +388,7 @@ function sortReconcileMessages(messages: ReconcileChatMessage[]) {
   return [...messages].sort((a, b) => timeValue(a.createdAt) - timeValue(b.createdAt));
 }
 
-function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSessions: ReconcileSession[]) {
+function mergeReconcileSessionDirectory(localSessions: ReconcileSession[], remoteSessions: ReconcileSession[]) {
   if (!remoteSessions.length) return localSessions;
 
   let changed = false;
@@ -395,40 +402,14 @@ function mergeReconcileSessions(localSessions: ReconcileSession[], remoteSession
       return;
     }
 
-    const localUpdated = timeValue(localSession.updatedAt);
-    const remoteUpdated = timeValue(remoteSession.updatedAt);
-    const localClearedAt = timeValue(localSession.clearedAt || '');
-    const remoteClearedAt = timeValue(remoteSession.clearedAt || '');
-    const localMessageIds = new Set(localSession.messages.map((message) => message.id));
-    const remoteMessageIds = new Set(remoteSession.messages.map((message) => message.id));
-
-    if (remoteUpdated > localUpdated) {
-      const localMessagesAfterRemote = localSession.messages.filter(
-        (message) => !remoteMessageIds.has(message.id) && timeValue(message.createdAt) > remoteUpdated,
-      );
-      const nextMessages = sortReconcileMessages([...remoteSession.messages, ...localMessagesAfterRemote]);
+    if (timeValue(remoteSession.updatedAt) > timeValue(localSession.updatedAt)) {
       changed = true;
       sessionMap.set(remoteSession.id, {
-        ...remoteSession,
-        clearedAt: remoteClearedAt >= localClearedAt ? remoteSession.clearedAt : localSession.clearedAt,
-        messages: nextMessages,
+        ...localSession,
+        title: remoteSession.title,
+        updatedAt: remoteSession.updatedAt,
       });
-      return;
     }
-
-    if (localClearedAt && remoteUpdated <= localClearedAt) return;
-
-    const remoteMessagesToAdd = remoteSession.messages.filter((message) => !localMessageIds.has(message.id));
-    if (!remoteMessagesToAdd.length) return;
-
-    changed = true;
-    const nextMessages = sortReconcileMessages([...localSession.messages, ...remoteMessagesToAdd]);
-    sessionMap.set(remoteSession.id, {
-      ...localSession,
-      updatedAt: timeValue(remoteSession.updatedAt) > timeValue(localSession.updatedAt) ? remoteSession.updatedAt : localSession.updatedAt,
-      clearedAt: remoteClearedAt > localClearedAt ? remoteSession.clearedAt : localSession.clearedAt,
-      messages: nextMessages,
-    });
   });
 
   const merged = [...sessionMap.values()].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
@@ -538,6 +519,8 @@ export default function Home() {
   const saveTimerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
   const skipNextSaveRef = useRef(false);
+  const pendingChatMessageIdsRef = useRef(new Set<string>());
+  const chatSyncRequestRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioGainRef = useRef<GainNode | null>(null);
   const audioNodesRef = useRef<OscillatorNode[]>([]);
@@ -570,6 +553,7 @@ export default function Home() {
   const [agentError, setAgentError] = useState('');
   const [reconcileChatInput, setReconcileChatInput] = useState('');
   const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>(starterReconcileSessions);
+  const reconcileSessionsRef = useRef(reconcileSessions);
   const [activeReconcileSessionId, setActiveReconcileSessionId] = useState(() => starterReconcileSessions[0].id);
   const [localHydrated, setLocalHydrated] = useState(false);
   const [reconcileScreen, setReconcileScreen] = useState<'sessions' | 'room'>('sessions');
@@ -594,6 +578,10 @@ export default function Home() {
   const [mapScale, setMapScale] = useState(1);
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number; originX: number; originY: number } | null>(null);
+
+  useEffect(() => {
+    reconcileSessionsRef.current = reconcileSessions;
+  }, [reconcileSessions]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -809,7 +797,7 @@ export default function Home() {
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
           if (payload.reconcileSessions?.length) {
-            setReconcileSessions((current) => mergeReconcileSessions(current, payload.reconcileSessions || []));
+            setReconcileSessions((current) => mergeReconcileSessionDirectory(current, payload.reconcileSessions || []));
             setActiveReconcileSessionId((current) =>
               payload.reconcileSessions?.some((session) => session.id === current)
                 ? current
@@ -918,6 +906,90 @@ export default function Home() {
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
+
+  useEffect(() => {
+    if (activeTab !== 'map' || reconcileScreen !== 'room' || !activeReconcileSessionId) return;
+    let cancelled = false;
+
+    const applyPayload = (payload: ReconcileChatSyncPayload) => {
+      if (!payload.initialized || cancelled) return;
+      setReconcileSessions((current) => current.map((session) => {
+        if (session.id !== activeReconcileSessionId) return session;
+        const remoteIds = new Set(payload.messages.map((message) => message.id));
+        const pendingMessages = session.messages.filter(
+          (message) => pendingChatMessageIdsRef.current.has(message.id) && !remoteIds.has(message.id),
+        );
+        const nextMessages = sortReconcileMessages([...payload.messages, ...pendingMessages]);
+        const visibleMessages = nextMessages.length
+          ? nextMessages
+          : [{
+              id: `welcome-${session.id}-${payload.clearedAt || 'initial'}`,
+              role: 'bot' as const,
+              title: botName,
+              body: `我在这里陪你们慢慢说。你们可以切换 ${userAName} / ${userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
+              createdAt: payload.clearedAt || session.createdAt,
+            }];
+        const messagesUnchanged = JSON.stringify(session.messages) === JSON.stringify(visibleMessages);
+        if (messagesUnchanged && session.clearedAt === (payload.clearedAt || undefined)) return session;
+        return {
+          ...session,
+          clearedAt: payload.clearedAt || undefined,
+          updatedAt: visibleMessages.at(-1)?.createdAt || payload.clearedAt || session.updatedAt,
+          messages: visibleMessages,
+        };
+      }));
+    };
+
+    const syncChat = async () => {
+      if (chatSyncRequestRef.current || cancelled) return;
+      chatSyncRequestRef.current = true;
+      try {
+        const query = new URLSearchParams({ space: sharedRoomKey, session: activeReconcileSessionId });
+        const response = await fetch(`/api/reconcile-chat?${query.toString()}`, { cache: 'no-store' });
+        const contentType = response.headers.get('Content-Type') || '';
+        if (!response.ok || !contentType.includes('application/json')) throw new Error('聊天同步失败');
+        let payload = await response.json() as ReconcileChatSyncPayload;
+
+        if (!payload.initialized) {
+          const session = reconcileSessionsRef.current.find((item) => item.id === activeReconcileSessionId);
+          if (session?.messages.length) {
+            const bootstrapResponse = await fetch('/api/reconcile-chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'bootstrap',
+                space: sharedRoomKey,
+                sessionId: activeReconcileSessionId,
+                messages: session.messages,
+              }),
+            });
+            if (!bootstrapResponse.ok) throw new Error('聊天记录初始化失败');
+            payload = await bootstrapResponse.json() as ReconcileChatSyncPayload;
+          }
+        }
+
+        applyPayload(payload);
+      } catch {
+        // Keep the local conversation visible while the network is temporarily unavailable.
+      } finally {
+        chatSyncRequestRef.current = false;
+      }
+    };
+
+    void syncChat();
+    const timer = window.setInterval(syncChat, 1500);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') void syncChat();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      chatSyncRequestRef.current = false;
+    };
+  }, [activeReconcileSessionId, activeTab, reconcileScreen, userAName, userBName]);
 
   function getRoleName(role: ReconcileRoomRole) {
     if (role === 'userA') return userAName;
@@ -1366,22 +1438,64 @@ export default function Home() {
     return nextResult;
   }
 
+  async function postReconcileChat(payload: Record<string, unknown>) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch('/api/reconcile-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ space: sharedRoomKey, ...payload }),
+        });
+        const contentType = response.headers.get('Content-Type') || '';
+        if (!contentType.includes('application/json')) throw new Error('聊天接口尚未部署');
+        const result = await response.json() as { ok?: boolean; message?: ReconcileChatMessage; clearedAt?: string; error?: string };
+        if (!response.ok) throw new Error(result.error || '聊天服务暂时不可用');
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('聊天服务暂时不可用');
+  }
+
+  async function persistReconcileMessage(sessionId: string, message: ReconcileChatMessage) {
+    try {
+      const result = await postReconcileChat({ action: 'send', sessionId, message });
+      const savedMessage = result.message;
+      if (!savedMessage) throw new Error('聊天服务没有返回消息');
+      pendingChatMessageIdsRef.current.delete(message.id);
+      setReconcileSessions((current) => current.map((session) => {
+        if (session.id !== sessionId) return session;
+        const withoutLocalCopy = session.messages.filter((item) => item.id !== message.id);
+        return {
+          ...session,
+          updatedAt: savedMessage.createdAt,
+          messages: sortReconcileMessages([...withoutLocalCopy, savedMessage]),
+        };
+      }));
+    } catch (error) {
+      setAgentError(`${error instanceof Error ? error.message : '消息发送失败'}，消息已保留在本机，请稍后再发送。`);
+    }
+  }
+
   function sendReconcileMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const body = reconcileChatInput.trim();
     if (!body) return;
     setAgentError('');
     const now = toDateTimeLocal(new Date());
+    const sessionId = activeReconcileSession.id;
+    const message: ReconcileChatMessage = {
+      id: crypto.randomUUID(),
+      role: reconcileSpeaker,
+      body,
+      createdAt: now,
+    };
+    pendingChatMessageIdsRef.current.add(message.id);
     updateActiveReconcileSession((session) => {
-      const messages = [
-        ...session.messages,
-        {
-          id: crypto.randomUUID(),
-          role: reconcileSpeaker,
-          body,
-          createdAt: now,
-        },
-      ];
+      const messages = [...session.messages, message];
       const humanCount = messages.filter((message) => message.role !== 'bot').length;
       return {
         ...session,
@@ -1391,6 +1505,7 @@ export default function Home() {
       };
     });
     setReconcileChatInput('');
+    void persistReconcileMessage(sessionId, message);
   }
 
   async function summarizeReconcileChat() {
@@ -1413,20 +1528,21 @@ export default function Home() {
         `下面是情侣吵架聊天室里的对话。请你作为第三方智能调停机器人，像自然聊天一样总结双方真正想表达的内容，指出误会可能在哪里，给出现在最适合的一步，并生成一段其中一方可以温柔发给对方的话。\n\n${transcript}`,
       );
       const now = toDateTimeLocal(new Date());
+      const sessionId = activeReconcileSession.id;
+      const botMessage: ReconcileChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'bot',
+        title: botName,
+        body: result.answer || result.repairAdvice,
+        createdAt: now,
+      };
+      pendingChatMessageIdsRef.current.add(botMessage.id);
       updateActiveReconcileSession((session) => ({
         ...session,
         updatedAt: now,
-        messages: [
-          ...session.messages,
-          {
-            id: crypto.randomUUID(),
-            role: 'bot',
-            title: botName,
-            body: result.answer || result.repairAdvice,
-            createdAt: now,
-          },
-        ],
+        messages: [...session.messages, botMessage],
       }));
+      void persistReconcileMessage(sessionId, botMessage);
     } catch (error) {
       setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
     } finally {
@@ -1434,16 +1550,32 @@ export default function Home() {
     }
   }
 
-  function resetReconcileChat() {
+  async function resetReconcileChat() {
     const now = toDateTimeLocal(new Date());
+    const sessionId = activeReconcileSession.id;
+    pendingChatMessageIdsRef.current.clear();
     updateActiveReconcileSession((session) => ({
       ...session,
       updatedAt: now,
       clearedAt: now,
-      messages: [createWelcomeChat(now)],
+      messages: [{ ...createWelcomeChat(now), id: `welcome-${session.id}-${now}` }],
     }));
     setReconcileChatInput('');
     setAgentError('');
+    try {
+      const result = await postReconcileChat({ action: 'clear', sessionId });
+      if (!result.clearedAt) throw new Error('聊天服务没有确认清空');
+      setReconcileSessions((current) => current.map((session) => session.id === sessionId
+        ? {
+            ...session,
+            clearedAt: result.clearedAt,
+            updatedAt: result.clearedAt,
+            messages: [{ ...createWelcomeChat(result.clearedAt || now), id: `welcome-${session.id}-${result.clearedAt}` }],
+          }
+        : session));
+    } catch (error) {
+      setAgentError(`${error instanceof Error ? error.message : '清空失败'}，请检查网络后重试。`);
+    }
   }
 
   const pageTitle =
