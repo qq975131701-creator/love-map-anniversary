@@ -1564,13 +1564,14 @@ export default function Home() {
     setAgentError('');
     try {
       const result = await postReconcileChat({ action: 'clear', sessionId });
-      if (!result.clearedAt) throw new Error('聊天服务没有确认清空');
+      const clearedAt = result.clearedAt;
+      if (!clearedAt) throw new Error('聊天服务没有确认清空');
       setReconcileSessions((current) => current.map((session) => session.id === sessionId
         ? {
             ...session,
-            clearedAt: result.clearedAt,
-            updatedAt: result.clearedAt,
-            messages: [{ ...createWelcomeChat(result.clearedAt || now), id: `welcome-${session.id}-${result.clearedAt}` }],
+            clearedAt,
+            updatedAt: clearedAt,
+            messages: [{ ...createWelcomeChat(clearedAt), id: `welcome-${session.id}-${clearedAt}` }],
           }
         : session));
     } catch (error) {
