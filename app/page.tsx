@@ -2096,12 +2096,12 @@ export default function Home() {
               </div>
 
               <div className="future-list">
-                {futurePlans.slice(0, 3).map((item, index) => (
+                {futurePlans.map((item, index) => (
                   <article className={`future-item ${item.status}`} key={item.id}>
                     <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
                       {item.status === 'done' ? '✓' : ''}
                     </button>
-                    <div className={`future-thumb thumb-${index + 1}`}>
+                    <div className={`future-thumb thumb-${(index % 3) + 1}`}>
                       {item.photos?.[0] && <img src={item.photos[0].url} alt={item.title} />}
                     </div>
                     <div>
