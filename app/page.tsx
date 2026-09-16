@@ -174,7 +174,6 @@ const tabs: { id: TabId; label: string; icon: string }[] = [
   { id: 'home', label: '首页', icon: '⌂' },
   { id: 'timeline', label: '时间轴', icon: '◷' },
   { id: 'letters', label: '信件', icon: '✉' },
-  { id: 'map', label: '和好', icon: '♡' },
   { id: 'more', label: '家', icon: '⌂' },
 ];
 
