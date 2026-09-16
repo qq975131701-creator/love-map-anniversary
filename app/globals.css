@@ -2924,6 +2924,44 @@ select:focus {
   overflow: hidden;
 }
 
+.future-filter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: -2px 0 10px;
+}
+
+.future-filter button {
+  min-width: 0;
+  border: 1px solid #efd9d6;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.78);
+  color: #a18477;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 9px 8px;
+}
+
+.future-filter button.active {
+  border-color: rgba(239, 122, 165, 0.35);
+  background: #fff0f5;
+  color: var(--pink);
+  box-shadow: 0 10px 20px rgba(239, 122, 165, 0.1);
+}
+
+.future-empty {
+  display: grid;
+  min-height: 92px;
+  place-items: center;
+  background: rgba(255, 253, 248, 0.84);
+  color: #a18477;
+  font-size: 14px;
+  font-weight: 900;
+  text-align: center;
+  padding: 18px;
+}
+
 .profile-note {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

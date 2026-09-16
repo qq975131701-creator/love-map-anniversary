@@ -109,6 +109,7 @@ type PartnerProfileItem = {
   updatedAt: string;
 };
 type FuturePlanStatus = 'todo' | 'planned' | 'done';
+type FuturePlanView = 'all' | 'open' | 'done';
 type FuturePlanItem = {
   id: string;
   title: string;
@@ -547,6 +548,7 @@ export default function Home() {
   const [futureNote, setFutureNote] = useState('');
   const [futureOccasion, setFutureOccasion] = useState('下次见面');
   const [futureStatus, setFutureStatus] = useState<FuturePlanStatus>('todo');
+  const [futureView, setFutureView] = useState<FuturePlanView>('all');
   const [futurePhotos, setFuturePhotos] = useState<PhotoAttachment[]>([]);
   const [uploadingPhotoFor, setUploadingPhotoFor] = useState<'event' | 'message' | 'future' | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
@@ -904,6 +906,11 @@ export default function Home() {
   const homeSyncLabel =
     cloudStatus === 'saved' || cloudStatus === 'ready' ? '已同步' : cloudStatus === 'loading' || cloudStatus === 'saving' ? '同步中' : '待同步';
   const visiblePartnerProfile = profileExpanded ? partnerProfile : partnerProfile.slice(0, 8);
+  const visibleFuturePlans = futurePlans.filter((item) => {
+    if (futureView === 'done') return item.status === 'done';
+    if (futureView === 'open') return item.status !== 'done';
+    return true;
+  });
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
@@ -2095,8 +2102,30 @@ export default function Home() {
                 </button>
               </div>
 
+              <div className="future-filter" aria-label="未来计划筛选">
+                {([
+                  ['all', '全部'],
+                  ['open', '未做完'],
+                  ['done', '已做完'],
+                ] as [FuturePlanView, string][]).map(([view, label]) => (
+                  <button
+                    key={view}
+                    type="button"
+                    className={futureView === view ? 'active' : ''}
+                    onClick={() => setFutureView(view)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="future-list">
-                {futurePlans.slice(0, 3).map((item, index) => (
+                {visibleFuturePlans.length === 0 && (
+                  <article className="future-empty">
+                    {futureView === 'done' ? '还没有完成的愿望' : futureView === 'open' ? '暂时没有未完成的愿望' : '还没有写下想一起做的事'}
+                  </article>
+                )}
+                {visibleFuturePlans.slice(0, 3).map((item, index) => (
                   <article className={`future-item ${item.status}`} key={item.id}>
                     <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
                       {item.status === 'done' ? '✓' : ''}
@@ -2112,9 +2141,9 @@ export default function Home() {
                     <em>›</em>
                   </article>
                 ))}
-                {futurePlans.length > 3 && (
+                {visibleFuturePlans.length > 3 && (
                   <div className="future-extra-grid" aria-label="更多未来计划">
-                    {futurePlans.slice(3).map((item, index) => (
+                    {visibleFuturePlans.slice(3).map((item, index) => (
                       <button
                         className={`future-extra-card ${item.status}`}
                         type="button"
