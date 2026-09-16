@@ -2091,7 +2091,7 @@ export default function Home() {
                   <h2>把想做的事，一件件变成我们的回忆。</h2>
                 </div>
                 <button type="button" onClick={() => setHomeComposer('future')}>
-                  添加 <span>＋</span>
+                  ♡
                 </button>
               </div>
 
