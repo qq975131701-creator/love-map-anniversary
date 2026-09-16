@@ -3274,13 +3274,14 @@ select:focus {
   left: max(12px, calc((100vw - 548px) / 2));
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 4px;
   border: 1px solid #dfcdb8;
   border-bottom: 0;
   border-radius: 22px 22px 0 0;
   background: rgba(255, 253, 248, 0.96);
   box-shadow: 0 -10px 28px rgba(92, 63, 42, 0.12);
-  overflow: hidden;
+  padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
 }
 
 .bottom-nav button {
@@ -3289,20 +3290,28 @@ select:focus {
   justify-items: center;
   gap: 4px;
   border: 0;
+  border-radius: 16px;
   background: transparent;
   color: #a49081;
   font-size: 12px;
   font-weight: 800;
-  padding: 10px 4px 12px;
+  padding: 7px 4px 8px;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
 .bottom-nav span {
-  font-size: 25px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  font-size: 24px;
   line-height: 1;
 }
 
 .bottom-nav button.active {
+  background: rgba(239, 112, 154, 0.1);
   color: var(--pink);
+  transform: translateY(-1px);
 }
 
 .celebrating .map-card,
