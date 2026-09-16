@@ -3111,6 +3111,66 @@ select:focus {
   border-color: #8ebf9c;
 }
 
+.future-extra-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  background: rgba(255, 253, 248, 0.84);
+  padding: 14px;
+}
+
+.future-extra-card {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 8px;
+  border: 1px dashed #efd6d2;
+  border-radius: 16px;
+  background: rgba(255, 249, 246, 0.8);
+  color: #5d493d;
+  font: inherit;
+  padding: 10px 8px;
+}
+
+.future-extra-card .future-thumb {
+  width: 58px;
+  height: 58px;
+}
+
+.future-extra-card strong {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: #5d493d;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.future-extra-card em {
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #fff4e5;
+  color: #d88480;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 8px;
+}
+
+.future-extra-card.done {
+  background: rgba(246, 255, 248, 0.82);
+  opacity: 0.72;
+}
+
 .future-signature {
   justify-self: end;
   margin: -2px 20px 0 0;
@@ -3512,6 +3572,16 @@ select:focus {
   .future-thumb {
     width: 56px;
     height: 56px;
+  }
+
+  .future-extra-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+  }
+
+  .future-extra-card .future-thumb {
+    width: 54px;
+    height: 54px;
   }
 
   .future-item > span {

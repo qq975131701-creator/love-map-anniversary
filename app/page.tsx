@@ -2096,7 +2096,7 @@ export default function Home() {
               </div>
 
               <div className="future-list">
-                {futurePlans.map((item, index) => (
+                {futurePlans.slice(0, 3).map((item, index) => (
                   <article className={`future-item ${item.status}`} key={item.id}>
                     <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
                       {item.status === 'done' ? '✓' : ''}
@@ -2112,6 +2112,25 @@ export default function Home() {
                     <em>›</em>
                   </article>
                 ))}
+                {futurePlans.length > 3 && (
+                  <div className="future-extra-grid" aria-label="更多未来计划">
+                    {futurePlans.slice(3).map((item, index) => (
+                      <button
+                        className={`future-extra-card ${item.status}`}
+                        type="button"
+                        key={item.id}
+                        onClick={() => cycleFuturePlanStatus(item.id)}
+                        aria-label={`切换 ${item.title} 状态`}
+                      >
+                        <span className={`future-thumb thumb-${((index + 3) % 3) + 1}`}>
+                          {item.photos?.[0] && <img src={item.photos[0].url} alt={item.title} />}
+                        </span>
+                        <strong>{item.title}</strong>
+                        <em>{item.occasion}</em>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <p className="future-signature">未来的每一件小事<br />都有你 ♡</p>
             </section>
