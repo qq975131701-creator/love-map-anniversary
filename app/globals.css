@@ -2230,8 +2230,8 @@ select:focus {
 
 .home-scene {
   position: relative;
-  min-height: 384px;
-  margin: -18px -16px -26px;
+  min-height: 492px;
+  margin: -18px -16px 0;
   overflow: hidden;
   border-radius: 0 0 28px 28px;
   background:
@@ -2319,7 +2319,7 @@ select:focus {
 .home-living-room {
   position: absolute;
   right: 0;
-  bottom: 40px;
+  bottom: 128px;
   width: 64%;
   height: 250px;
 }
@@ -2453,6 +2453,16 @@ select:focus {
   border-radius: 24px;
   background: rgba(255, 253, 248, 0.96);
   padding: 20px 22px;
+}
+
+.home-scene .home-room-card {
+  position: absolute;
+  right: 20px;
+  bottom: 22px;
+  left: 20px;
+  z-index: 4;
+  border-color: rgba(222, 201, 184, 0.88);
+  box-shadow: 0 18px 36px rgba(92, 63, 42, 0.14);
 }
 
 .home-room-card label,
@@ -3502,7 +3512,7 @@ select:focus {
   }
 
   .home-scene {
-    min-height: 356px;
+    min-height: 454px;
   }
 
   .home-status-bar {
@@ -3528,6 +3538,7 @@ select:focus {
   }
 
   .home-living-room {
+    bottom: 132px;
     width: 68%;
   }
 
@@ -3535,6 +3546,12 @@ select:focus {
     grid-template-columns: 88px minmax(0, 1fr);
     gap: 14px;
     padding: 18px;
+  }
+
+  .home-scene .home-room-card {
+    right: 14px;
+    bottom: 16px;
+    left: 14px;
   }
 
   .room-visual {
