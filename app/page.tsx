@@ -540,6 +540,7 @@ export default function Home() {
   const [composeOpen, setComposeOpen] = useState(false);
   const [eventComposerOpen, setEventComposerOpen] = useState(false);
   const [homeComposer, setHomeComposer] = useState<'room' | 'profile' | 'future' | null>(null);
+  const [profileExpanded, setProfileExpanded] = useState(false);
   const [profileOwner, setProfileOwner] = useState<PartnerProfileOwner>('userA');
   const [profileLabel, setProfileLabel] = useState('');
   const [futureTitle, setFutureTitle] = useState('');
@@ -902,6 +903,7 @@ export default function Home() {
   const userBName = roomSettings.userBName || defaultRoomSettings.userBName;
   const homeSyncLabel =
     cloudStatus === 'saved' || cloudStatus === 'ready' ? '已同步' : cloudStatus === 'loading' || cloudStatus === 'saving' ? '同步中' : '待同步';
+  const visiblePartnerProfile = profileExpanded ? partnerProfile : partnerProfile.slice(0, 8);
   const activeReconcileSession =
     reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
   const reconcileChatMessages = activeReconcileSession.messages;
@@ -2052,8 +2054,8 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="tag-wall">
-                {partnerProfile.slice(0, 8).map((item, index) => (
+              <div className={profileExpanded ? 'tag-wall expanded' : 'tag-wall'}>
+                {visiblePartnerProfile.map((item, index) => (
                   <button
                     className={`couple-tag-note owner-${item.owner}`}
                     style={{ '--tag-tilt': `${[-4, 3, -2, 4, -3, 2, -5, 3][index % 8]}deg` } as CSSProperties}
@@ -2068,9 +2070,14 @@ export default function Home() {
                     <strong>{item.label}</strong>
                   </button>
                 ))}
-                <button className="add-tag-note" type="button" onClick={() => setHomeComposer('profile')}>
-                  <span>＋</span>
-                  添加标签
+                <button
+                  className="add-tag-note more-tag-note"
+                  type="button"
+                  aria-expanded={profileExpanded}
+                  onClick={() => setProfileExpanded((value) => !value)}
+                >
+                  <span>{profileExpanded ? '⌃' : '⋯'}</span>
+                  {profileExpanded ? '收起' : '更多'}
                 </button>
                 <p>不同的我们，<br />更完整的爱。</p>
               </div>

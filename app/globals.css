@@ -2728,6 +2728,12 @@ select:focus {
   padding: 36px 26px 58px;
 }
 
+.tag-wall.expanded {
+  min-height: 0;
+  overflow: visible;
+  padding-bottom: 86px;
+}
+
 .tag-wall::before,
 .tag-wall::after {
   content: '';
@@ -2838,6 +2844,11 @@ select:focus {
 .add-tag-note span {
   color: #df6d8b;
   font-size: 38px;
+  line-height: 0.8;
+}
+
+.more-tag-note span {
+  font-size: 34px;
   line-height: 0.8;
 }
 
