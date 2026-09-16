@@ -2028,12 +2028,7 @@ export default function Home() {
         ) : activeTab === 'more' ? (
           <section className="settings-view" aria-label="家">
             <section className="home-scene" aria-label="我们的房间">
-              <div className="home-status-bar" aria-hidden="true">
-                <strong>9:41</strong>
-                <span>▮▮▮ ◒ ▰</span>
-              </div>
               <div className="home-scene-copy">
-                <h2>家 <span>♥</span></h2>
                 <p className="home-room-title">
                   {roomDisplayName}
                   <button type="button" onClick={() => setHomeComposer('room')} aria-label="编辑房间名称">

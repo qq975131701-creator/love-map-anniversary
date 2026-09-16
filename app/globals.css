@@ -2230,13 +2230,13 @@ select:focus {
 
 .home-scene {
   position: relative;
-  min-height: 430px;
+  min-height: 388px;
   margin: -18px -16px 0;
   overflow: hidden;
   border-radius: 0 0 28px 28px;
   background:
-    linear-gradient(90deg, rgba(255, 253, 248, 0.92) 0 37%, rgba(255, 249, 244, 0.42) 58%, rgba(255, 245, 244, 0.1) 100%),
-    url('/home-cover-family.png') center / cover no-repeat,
+    linear-gradient(90deg, rgba(255, 253, 248, 0.96) 0 34%, rgba(255, 249, 244, 0.5) 52%, rgba(255, 245, 244, 0.08) 100%),
+    url('/home-cover-family.png') 58% center / cover no-repeat,
     linear-gradient(145deg, #fff8f1, #f5e2d8 72%, #ead8c8);
 }
 
@@ -2245,60 +2245,27 @@ select:focus {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 240, 237, 0.22)),
-    linear-gradient(90deg, rgba(255, 253, 248, 0.5) 0 34%, transparent 62%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 240, 237, 0.16)),
+    linear-gradient(90deg, rgba(255, 253, 248, 0.54) 0 30%, transparent 56%);
   opacity: 1;
-}
-
-.home-status-bar {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px 42px 0;
-  color: #2d211d;
-  font-size: 24px;
-  font-weight: 950;
-  letter-spacing: 0;
-}
-
-.home-status-bar span {
-  font-size: 18px;
-  letter-spacing: 2px;
 }
 
 .home-scene-copy {
   position: relative;
   z-index: 2;
-  width: 52%;
-  padding: 38px 0 0 42px;
-}
-
-.home-scene-copy h2 {
-  margin: 0;
-  color: #4e372f;
-  font-size: 62px;
-  line-height: 0.96;
-  font-weight: 950;
-  letter-spacing: 0;
-}
-
-.home-scene-copy h2 span {
-  color: #f3a7b7;
-  font-size: 34px;
-  vertical-align: 12px;
+  width: 50%;
+  padding: 72px 0 0 42px;
 }
 
 .home-room-title {
   display: flex;
   align-items: center;
   gap: 9px;
-  margin: 15px 0 0;
+  margin: 0;
   color: #6e5146;
-  font-size: 28px;
+  font-size: 30px;
   line-height: 1.15;
-  font-weight: 850;
+  font-weight: 950;
   overflow-wrap: anywhere;
 }
 
@@ -3336,10 +3303,6 @@ select:focus {
     margin-inline: -14px;
   }
 
-  .home-status-bar {
-    padding-inline: 42px;
-  }
-
 }
 
 @media (max-width: 390px) {
@@ -3426,26 +3389,17 @@ select:focus {
   }
 
   .home-scene {
-    min-height: 430px;
-    background-position: 56% center;
-  }
-
-  .home-status-bar {
-    padding-inline: 32px;
-    font-size: 21px;
+    min-height: 388px;
+    background-position: 60% center;
   }
 
   .home-scene-copy {
-    width: 60%;
-    padding-left: 30px;
-  }
-
-  .home-scene-copy h2 {
-    font-size: 54px;
+    width: 58%;
+    padding: 70px 0 0 30px;
   }
 
   .home-room-title {
-    font-size: 24px;
+    font-size: 26px;
   }
 
   .home-scene-copy small {
