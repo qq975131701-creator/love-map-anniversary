@@ -2043,27 +2043,6 @@ export default function Home() {
                 <em title={cloudMessage}><span className={`sync-dot ${cloudStatus}`} />{homeSyncLabel} · 两个人的爱都在这里</em>
                 <small>和你在一起，<br />就是最温暖的家。</small>
               </div>
-              <div className="home-living-room" aria-hidden="true">
-                <span className="wall-note">一起<br />更好的未来 ♡</span>
-                <span className="home-window" />
-                <span className="sofa-back" />
-                <span className="sofa-seat" />
-                <span className="home-person person-one">
-                  <i />
-                </span>
-                <span className="home-person person-two">
-                  <i />
-                </span>
-                <span className="maine-cat">
-                  <i />
-                  <b />
-                </span>
-                <span className="golden-dog">
-                  <i />
-                  <b />
-                </span>
-                <span className="soft-pillow">有你<br />就有家 ♡</span>
-              </div>
             </section>
 
             <section className="home-memory-card partner-profile-card" aria-label="双方性格爱好">
