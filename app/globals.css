@@ -2230,14 +2230,14 @@ select:focus {
 
 .home-scene {
   position: relative;
-  min-height: 492px;
+  min-height: 430px;
   margin: -18px -16px 0;
   overflow: hidden;
   border-radius: 0 0 28px 28px;
   background:
-    linear-gradient(100deg, rgba(255, 253, 248, 0.98) 0 37%, rgba(255, 247, 242, 0.58) 58%, rgba(255, 235, 241, 0.64) 100%),
-    radial-gradient(circle at 74% 52%, rgba(244, 155, 170, 0.34), transparent 20%),
-    linear-gradient(145deg, #fff8f1, #f6dfd6 72%, #eee0d2);
+    linear-gradient(100deg, rgba(255, 253, 248, 0.98) 0 39%, rgba(255, 247, 242, 0.72) 59%, rgba(246, 227, 219, 0.86) 100%),
+    radial-gradient(circle at 76% 56%, rgba(244, 162, 174, 0.24), transparent 24%),
+    linear-gradient(145deg, #fff8f1, #f5e2d8 72%, #ead8c8);
 }
 
 .home-scene::before {
@@ -2271,7 +2271,8 @@ select:focus {
 .home-scene-copy {
   position: relative;
   z-index: 2;
-  padding: 42px 0 0 42px;
+  width: 52%;
+  padding: 38px 0 0 42px;
 }
 
 .home-scene-copy h2 {
@@ -2289,16 +2290,53 @@ select:focus {
   vertical-align: 12px;
 }
 
-.home-scene-copy p {
+.home-room-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   margin: 15px 0 0;
   color: #6e5146;
   font-size: 28px;
   line-height: 1.15;
+  font-weight: 850;
+  overflow-wrap: anywhere;
+}
+
+.home-room-title button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(206, 158, 145, 0.34);
+  border-radius: 50%;
+  background: rgba(255, 253, 248, 0.74);
+  box-shadow: 0 8px 18px rgba(105, 75, 58, 0.1);
+  color: #9e7c72;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.home-scene-copy em {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.72);
+  color: #967a6d;
+  font-style: normal;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.35;
+  padding: 8px 12px;
 }
 
 .home-scene-copy small {
   display: block;
-  margin-top: 42px;
+  margin-top: 34px;
   color: #76594d;
   font-size: 19px;
   font-weight: 650;
@@ -2319,15 +2357,15 @@ select:focus {
 .home-living-room {
   position: absolute;
   right: 0;
-  bottom: 128px;
-  width: 64%;
-  height: 250px;
+  bottom: 24px;
+  width: 66%;
+  height: 286px;
 }
 
 .wall-note {
   position: absolute;
-  top: 4px;
-  left: 44%;
+  top: 0;
+  left: 38%;
   z-index: 3;
   display: grid;
   width: 118px;
@@ -2344,47 +2382,19 @@ select:focus {
   transform: rotate(-7deg);
 }
 
-.flower-vase {
+.home-window {
   position: absolute;
-  top: 58px;
-  left: 29%;
-  z-index: 2;
-  width: 44px;
-  height: 58px;
-  border-radius: 14px 14px 20px 20px;
-  background: linear-gradient(#f4c9b8, #e9ac9b);
-  box-shadow:
-    0 -34px 0 -17px #f0b1ad,
-    10px -42px 0 -18px #f7c7a9,
-    -10px -38px 0 -18px #eeb5bf;
-}
-
-.plant-leaf {
-  position: absolute;
-  z-index: 2;
-  width: 42px;
-  height: 24px;
-  border-radius: 80% 10% 80% 10%;
-  background: #9db385;
-  opacity: 0.86;
-}
-
-.leaf-one {
-  right: 60px;
-  top: 58px;
-  transform: rotate(-28deg);
-}
-
-.leaf-two {
-  right: 32px;
-  top: 86px;
-  transform: rotate(24deg);
-}
-
-.leaf-three {
-  right: 78px;
-  top: 104px;
-  transform: rotate(16deg);
+  top: 38px;
+  right: 54px;
+  z-index: 1;
+  width: 102px;
+  height: 74px;
+  border: 8px solid rgba(255, 253, 248, 0.7);
+  border-radius: 18px;
+  background:
+    linear-gradient(90deg, transparent calc(50% - 2px), rgba(216, 178, 162, 0.46) calc(50% - 2px) calc(50% + 2px), transparent calc(50% + 2px)),
+    linear-gradient(180deg, #ffe7d7, #fff9f2);
+  box-shadow: 0 12px 26px rgba(111, 80, 58, 0.1);
 }
 
 .sofa-back,
@@ -2397,29 +2407,186 @@ select:focus {
 }
 
 .sofa-back {
-  width: 70%;
-  height: 126px;
+  width: 76%;
+  height: 132px;
   box-shadow: inset 22px 0 34px rgba(255, 255, 255, 0.32);
 }
 
 .sofa-seat {
   right: 52px;
   bottom: -12px;
-  width: 77%;
+  width: 80%;
   height: 84px;
   border-radius: 42px;
   background: linear-gradient(145deg, #fff4f6, #ffd9e3);
   box-shadow: 0 16px 28px rgba(119, 82, 68, 0.12);
 }
 
+.home-person {
+  position: absolute;
+  bottom: 66px;
+  z-index: 4;
+  width: 58px;
+  height: 106px;
+  border-radius: 30px 30px 20px 20px;
+  background: linear-gradient(180deg, #f4b8b0 0 44%, #f9d9d3 44% 100%);
+  box-shadow: 0 12px 22px rgba(112, 80, 64, 0.1);
+}
+
+.home-person::before {
+  content: '';
+  position: absolute;
+  top: -33px;
+  left: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #f2c3a7;
+  box-shadow: 0 -5px 0 #5c453c;
+}
+
+.home-person i {
+  position: absolute;
+  right: -22px;
+  bottom: 40px;
+  width: 40px;
+  height: 18px;
+  border-radius: 999px;
+  background: #f2c3a7;
+  transform: rotate(-20deg);
+}
+
+.person-one {
+  right: 210px;
+  background: linear-gradient(180deg, #d7a9a1 0 44%, #fff0e8 44% 100%);
+}
+
+.person-two {
+  right: 154px;
+  transform: scaleX(-1);
+  background: linear-gradient(180deg, #9e8174 0 44%, #f7d6ca 44% 100%);
+}
+
+.maine-cat,
+.golden-dog {
+  position: absolute;
+  z-index: 5;
+  border-radius: 999px;
+  box-shadow: 0 10px 18px rgba(107, 76, 58, 0.1);
+}
+
+.maine-cat {
+  right: 118px;
+  bottom: 26px;
+  width: 70px;
+  height: 40px;
+  background:
+    repeating-linear-gradient(105deg, transparent 0 9px, rgba(90, 85, 82, 0.22) 9px 12px),
+    linear-gradient(145deg, #d7d3ca, #a9a49c);
+}
+
+.maine-cat::before,
+.maine-cat::after {
+  content: '';
+  position: absolute;
+  top: -13px;
+  border-right: 9px solid transparent;
+  border-bottom: 17px solid #b9b4ac;
+  border-left: 9px solid transparent;
+}
+
+.maine-cat::before {
+  left: 12px;
+}
+
+.maine-cat::after {
+  left: 32px;
+}
+
+.maine-cat i {
+  position: absolute;
+  right: -17px;
+  bottom: 8px;
+  width: 32px;
+  height: 12px;
+  border-radius: 999px;
+  border-top: 6px solid #a9a49c;
+  transform: rotate(28deg);
+}
+
+.maine-cat b {
+  position: absolute;
+  left: 18px;
+  top: 14px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #5d5651;
+  box-shadow: 18px 0 0 #5d5651;
+}
+
+.golden-dog {
+  right: 22px;
+  bottom: 22px;
+  width: 82px;
+  height: 48px;
+  background: linear-gradient(145deg, #efc36f, #dda34e);
+}
+
+.golden-dog::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e7b45d;
+  box-shadow: 8px 12px 0 -7px #805d3d;
+}
+
+.golden-dog::after {
+  content: '';
+  position: absolute;
+  right: -28px;
+  top: 12px;
+  width: 40px;
+  height: 13px;
+  border-radius: 999px;
+  background: #e1aa51;
+  transform: rotate(-22deg);
+}
+
+.golden-dog i {
+  position: absolute;
+  left: -18px;
+  top: -4px;
+  width: 14px;
+  height: 26px;
+  border-radius: 999px;
+  background: #d29447;
+  transform: rotate(-24deg);
+}
+
+.golden-dog b {
+  position: absolute;
+  left: 18px;
+  bottom: -8px;
+  width: 10px;
+  height: 16px;
+  border-radius: 999px;
+  background: #c98f45;
+  box-shadow: 42px 0 0 #c98f45;
+}
+
 .soft-pillow {
   position: absolute;
-  right: 74px;
-  bottom: 48px;
+  right: 210px;
+  bottom: 24px;
   z-index: 3;
-  display: grid;
-  width: 105px;
-  height: 88px;
+  display: none;
+  width: 92px;
+  height: 70px;
   place-items: center;
   border-radius: 48% 52% 42% 46%;
   background: #f7aebe;
@@ -2453,16 +2620,6 @@ select:focus {
   border-radius: 24px;
   background: rgba(255, 253, 248, 0.96);
   padding: 20px 22px;
-}
-
-.home-scene .home-room-card {
-  position: absolute;
-  right: 20px;
-  bottom: 22px;
-  left: 20px;
-  z-index: 4;
-  border-color: rgba(222, 201, 184, 0.88);
-  box-shadow: 0 18px 36px rgba(92, 63, 42, 0.14);
 }
 
 .home-room-card label,
@@ -3512,7 +3669,7 @@ select:focus {
   }
 
   .home-scene {
-    min-height: 454px;
+    min-height: 430px;
   }
 
   .home-status-bar {
@@ -3521,6 +3678,7 @@ select:focus {
   }
 
   .home-scene-copy {
+    width: 60%;
     padding-left: 30px;
   }
 
@@ -3528,30 +3686,42 @@ select:focus {
     font-size: 54px;
   }
 
-  .home-scene-copy p {
+  .home-room-title {
     font-size: 24px;
   }
 
   .home-scene-copy small {
-    margin-top: 34px;
+    margin-top: 28px;
     font-size: 17px;
   }
 
   .home-living-room {
-    bottom: 132px;
-    width: 68%;
+    bottom: 18px;
+    width: 72%;
   }
 
-  .home-room-card {
-    grid-template-columns: 88px minmax(0, 1fr);
-    gap: 14px;
-    padding: 18px;
+  .wall-note {
+    left: 34%;
   }
 
-  .home-scene .home-room-card {
-    right: 14px;
-    bottom: 16px;
-    left: 14px;
+  .home-window {
+    right: 34px;
+  }
+
+  .person-one {
+    right: 184px;
+  }
+
+  .person-two {
+    right: 130px;
+  }
+
+  .maine-cat {
+    right: 96px;
+  }
+
+  .golden-dog {
+    right: 10px;
   }
 
   .room-visual {

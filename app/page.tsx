@@ -2034,38 +2034,36 @@ export default function Home() {
               </div>
               <div className="home-scene-copy">
                 <h2>家 <span>♥</span></h2>
-                <p>我们的房间</p>
+                <p className="home-room-title">
+                  {roomDisplayName}
+                  <button type="button" onClick={() => setHomeComposer('room')} aria-label="编辑房间名称">
+                    ✎
+                  </button>
+                </p>
+                <em title={cloudMessage}><span className={`sync-dot ${cloudStatus}`} />{homeSyncLabel} · 两个人的爱都在这里</em>
                 <small>和你在一起，<br />就是最温暖的家。</small>
               </div>
               <div className="home-living-room" aria-hidden="true">
                 <span className="wall-note">一起<br />更好的未来 ♡</span>
-                <span className="flower-vase" />
-                <span className="plant-leaf leaf-one" />
-                <span className="plant-leaf leaf-two" />
-                <span className="plant-leaf leaf-three" />
+                <span className="home-window" />
                 <span className="sofa-back" />
                 <span className="sofa-seat" />
+                <span className="home-person person-one">
+                  <i />
+                </span>
+                <span className="home-person person-two">
+                  <i />
+                </span>
+                <span className="maine-cat">
+                  <i />
+                  <b />
+                </span>
+                <span className="golden-dog">
+                  <i />
+                  <b />
+                </span>
                 <span className="soft-pillow">有你<br />就有家 ♡</span>
               </div>
-              <article className="home-room-card">
-                <div className="room-visual" aria-hidden="true">
-                  <span>⌂</span>
-                  <i>♥</i>
-                </div>
-                <div className="sync-status-row">
-                  <div>
-                    <p>房间名称</p>
-                    <h2>
-                      {roomDisplayName}
-                      <button type="button" onClick={() => setHomeComposer('room')} aria-label="编辑房间名称">
-                        ✎
-                      </button>
-                    </h2>
-                    <small title={cloudMessage}><span className={`sync-dot ${cloudStatus}`} />{homeSyncLabel} · 两个人的爱都在这里</small>
-                  </div>
-                  <em>›</em>
-                </div>
-              </article>
             </section>
 
             <section className="home-memory-card partner-profile-card" aria-label="双方性格爱好">
