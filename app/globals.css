@@ -2236,7 +2236,7 @@ select:focus {
   border-radius: 0 0 28px 28px;
   background:
     linear-gradient(90deg, rgba(255, 253, 248, 0.96) 0 34%, rgba(255, 249, 244, 0.5) 52%, rgba(255, 245, 244, 0.08) 100%),
-    url('/home-cover-family.png') 58% center / cover no-repeat,
+    url('/home-cover-family.webp') 58% center / cover no-repeat,
     linear-gradient(145deg, #fff8f1, #f5e2d8 72%, #ead8c8);
 }
 
