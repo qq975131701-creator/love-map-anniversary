@@ -1,8 +1,12 @@
 'use client';
 
 /* eslint-disable @next/next/no-img-element -- User-uploaded Blob photos are served through Netlify Functions in a static export. */
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
+
+const TimelineTab = lazy(() => import('./components/TimelineTab'));
+const LettersTab = lazy(() => import('./components/LettersTab'));
+const HouseTab = lazy(() => import('./components/HouseTab'));
 
 type PhotoAttachment = {
   id: string;
@@ -42,7 +46,7 @@ type SecretMessage = {
   photos?: PhotoAttachment[];
 };
 
-type TabId = 'home' | 'timeline' | 'letters' | 'map' | 'more';
+type TabId = 'home' | 'timeline' | 'letters' | 'more';
 type CloudStatus = 'idle' | 'loading' | 'ready' | 'saving' | 'saved' | 'local' | 'error';
 type SharedMemoryData = {
   empty?: boolean;
@@ -50,56 +54,14 @@ type SharedMemoryData = {
   roomSettings?: RoomSettings;
   events: Anniversary[];
   messages: SecretMessage[];
-  reconcileChats?: ReconcileChatMessage[];
-  reconcileSessions?: ReconcileSession[];
   partnerProfile?: PartnerProfileItem[];
   futurePlans?: FuturePlanItem[];
   updatedAt?: string | null;
-};
-type ReconcileResult = {
-  answer: string;
-  sharedCore: string;
-  trigger: string;
-  needs: string;
-  myNeed: string;
-  partnerNeed: string;
-  avoidNow: string;
-  gentleScript: string;
-  repairAdvice: string;
-  shortReply: string;
-  sincereReply: string;
-  cuteReply: string;
-  repairPlan: string;
-  nextStep: string;
 };
 type RoomSettings = {
   roomName: string;
   userAName: string;
   userBName: string;
-};
-type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
-type ReconcileChatMessage = {
-  id: string;
-  role: ReconcileRoomRole;
-  title?: string;
-  body: string;
-  action?: string;
-  createdAt: string;
-};
-type ReconcileSession = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  clearedAt?: string;
-  messages: ReconcileChatMessage[];
-};
-type ReconcileChatSyncPayload = {
-  initialized: boolean;
-  sessionId: string;
-  clearedAt: string | null;
-  messages: ReconcileChatMessage[];
-  error?: string;
 };
 type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 type PartnerProfileItem = {
@@ -122,14 +84,11 @@ type FuturePlanItem = {
 
 const storageKey = 'love-map-anniversaries-v2';
 const messageStorageKey = 'love-map-secret-messages-v1';
-const reconcileChatStorageKey = 'love-map-reconcile-chat-v1';
-const reconcileSessionStorageKey = 'love-map-reconcile-sessions-v1';
 const partnerProfileStorageKey = 'love-map-partner-profile-v1';
 const futurePlanStorageKey = 'love-map-future-plans-v1';
 const roomSettingsStorageKey = 'love-map-room-settings-v1';
 const legacySpaceStorageKey = 'love-map-space-code-v1';
 const sharedRoomKey = 'dadata-xiaoxiao';
-const botName = '桃桃';
 const defaultRoomSettings: RoomSettings = {
   roomName: '我们的小窝',
   userAName: '大大塔小王',
@@ -200,37 +159,6 @@ const starterMessages: SecretMessage[] = [
   },
 ];
 
-const starterReconcileChats: ReconcileChatMessage[] = [
-  {
-    id: 'bot-welcome',
-    role: 'bot',
-    title: botName,
-    body: `我在这里陪你们慢慢说。你们可以切换 ${defaultRoomSettings.userAName} / ${defaultRoomSettings.userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
-    createdAt: '2026-08-30T12:18',
-  },
-];
-
-const starterReconcileSessions: ReconcileSession[] = [
-  {
-    id: 'session-welcome',
-    title: '第一次和好练习',
-    createdAt: '2026-08-30T12:18',
-    updatedAt: '2026-08-30T12:18',
-    messages: starterReconcileChats,
-  },
-];
-
-const partnerOwnerMeta: Record<PartnerProfileOwner, { label: string; short: string; icon: string }> = {
-  userA: { label: '用户 A', short: 'A', icon: 'A' },
-  userB: { label: '用户 B', short: 'B', icon: 'B' },
-  us: { label: '我们', short: '我们', icon: '♥' },
-};
-
-const futureStatusMeta: Record<FuturePlanStatus, { label: string; icon: string }> = {
-  todo: { label: '想做', icon: '○' },
-  planned: { label: '约定中', icon: '◐' },
-  done: { label: '已完成', icon: '●' },
-};
 
 const starterPartnerProfile: PartnerProfileItem[] = [
   {
@@ -315,10 +243,6 @@ function formatShortDate(value: Date) {
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
 }
 
-function formatFullChineseDate(value: Date) {
-  return `${value.getFullYear()}年${value.getMonth() + 1}月${value.getDate()}日`;
-}
-
 function formatMonthLabel(value: Date) {
   return `${value.getFullYear()}年${value.getMonth() + 1}月`;
 }
@@ -377,49 +301,6 @@ function normalizePartnerProfile(value: unknown): PartnerProfileItem[] {
 
     return [];
   });
-}
-
-function timeValue(value: string) {
-  const time = new Date(value).getTime();
-  return Number.isFinite(time) ? time : 0;
-}
-
-function sortReconcileMessages(messages: ReconcileChatMessage[]) {
-  return [...messages].sort((a, b) => timeValue(a.createdAt) - timeValue(b.createdAt));
-}
-
-function mergeReconcileSessionDirectory(localSessions: ReconcileSession[], remoteSessions: ReconcileSession[]) {
-  if (!remoteSessions.length) return localSessions;
-
-  let changed = false;
-  const sessionMap = new Map(localSessions.map((session) => [session.id, session]));
-
-  remoteSessions.forEach((remoteSession) => {
-    const localSession = sessionMap.get(remoteSession.id);
-    if (!localSession) {
-      changed = true;
-      sessionMap.set(remoteSession.id, remoteSession);
-      return;
-    }
-
-    if (timeValue(remoteSession.updatedAt) > timeValue(localSession.updatedAt)) {
-      changed = true;
-      sessionMap.set(remoteSession.id, {
-        ...localSession,
-        title: remoteSession.title,
-        updatedAt: remoteSession.updatedAt,
-      });
-    }
-  });
-
-  const merged = [...sessionMap.values()].sort((a, b) => timeValue(b.updatedAt) - timeValue(a.updatedAt));
-  if (!changed) {
-    const currentOrder = localSessions.map((session) => session.id).join('|');
-    const nextOrder = merged.map((session) => session.id).join('|');
-    changed = currentOrder !== nextOrder;
-  }
-
-  return changed ? merged : localSessions;
 }
 
 function normalizePhotos(value: unknown): PhotoAttachment[] {
@@ -519,8 +400,6 @@ export default function Home() {
   const saveTimerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
   const skipNextSaveRef = useRef(false);
-  const pendingChatMessageIdsRef = useRef(new Set<string>());
-  const chatSyncRequestRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioGainRef = useRef<GainNode | null>(null);
   const audioNodesRef = useRef<OscillatorNode[]>([]);
@@ -551,39 +430,10 @@ export default function Home() {
   const [futureView, setFutureView] = useState<FuturePlanView>('all');
   const [futurePhotos, setFuturePhotos] = useState<PhotoAttachment[]>([]);
   const [uploadingPhotoFor, setUploadingPhotoFor] = useState<'event' | 'message' | 'future' | null>(null);
-  const [agentLoading, setAgentLoading] = useState(false);
-  const [agentError, setAgentError] = useState('');
-  const [reconcileChatInput, setReconcileChatInput] = useState('');
-  const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>(starterReconcileSessions);
-  const reconcileSessionsRef = useRef(reconcileSessions);
-  const [activeReconcileSessionId, setActiveReconcileSessionId] = useState(() => starterReconcileSessions[0].id);
   const [localHydrated, setLocalHydrated] = useState(false);
-  const [reconcileScreen, setReconcileScreen] = useState<'sessions' | 'room'>('sessions');
-  const [reconcileSpeaker, setReconcileSpeaker] = useState<'userA' | 'userB'>('userA');
-  const [reconcileResult, setReconcileResult] = useState<ReconcileResult>({
-    answer:
-      '我能感觉到你不是单纯想争输赢，而是希望自己的感受被认真看见。现在最重要的不是立刻讲清所有道理，而是先把语气降下来，让对方知道你还想靠近。\n\n你可以先发一句：“我刚才情绪有点满，但我不是想和你吵。我其实很在乎你，也想好好听你说。”如果对方愿意回应，再慢慢聊刚才真正让你难过的点。',
-    sharedCore: '你们都想被在乎，只是表达方式在情绪里变硬了。',
-    trigger: '沟通节奏不一致，加上期待没有被及时看见。',
-    needs: '一方需要被理解，另一方可能需要一点空间和确定感。',
-    myNeed: '你可能想确认自己被认真听见，而不是被一句话带过去。',
-    partnerNeed: 'TA 可能也想被温柔对待，并希望对话不要继续升级。',
-    avoidNow: '先不要翻旧账、连续追问或用冷话试探，对方越紧张越难靠近。',
-    gentleScript: '我现在还有点委屈，但我想先把话说软一点。我们都慢慢讲，我会认真听你。',
-    repairAdvice: '先承认情绪，再表达在乎，最后约一个轻松时刻继续聊。',
-    shortReply: '我不想和你冷着，我刚才语气不好。我们慢慢说，好吗？',
-    sincereReply: '刚才我有点被情绪带着走了，说话可能让你不舒服。其实我很在乎你，也想认真听听你的感受。',
-    cuteReply: '我刚才有点笨笨的，但我真的不想和你不开心。可以给我一个重新好好说话的机会吗？',
-    repairPlan: '先各自安静 10 分钟，再发一条软话；如果对方愿意，今晚只聊感受，不急着判定谁对谁错。',
-    nextStep: '10 分钟后发一句软话，今晚只确认彼此还在乎，明天再复盘细节。',
-  });
   const [mapScale, setMapScale] = useState(1);
   const [mapOffset, setMapOffset] = useState({ x: 0, y: 0 });
   const [dragStart, setDragStart] = useState<{ x: number; y: number; originX: number; originY: number } | null>(null);
-
-  useEffect(() => {
-    reconcileSessionsRef.current = reconcileSessions;
-  }, [reconcileSessions]);
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -610,30 +460,11 @@ export default function Home() {
           }
         }
 
-        const storedSessions = JSON.parse(window.localStorage.getItem(reconcileSessionStorageKey) || '[]') as ReconcileSession[];
-        if (storedSessions.length) {
-          setReconcileSessions(storedSessions);
-          setActiveReconcileSessionId(storedSessions[0].id);
-        } else {
-          const legacyMessages = JSON.parse(window.localStorage.getItem(reconcileChatStorageKey) || '[]') as ReconcileChatMessage[];
-          if (legacyMessages.length) {
-            const legacySession = {
-              id: 'session-legacy',
-              title: '之前的和好聊天',
-              createdAt: legacyMessages[0]?.createdAt || toDateTimeLocal(new Date()),
-              updatedAt: legacyMessages.at(-1)?.createdAt || toDateTimeLocal(new Date()),
-              messages: legacyMessages,
-            };
-            setReconcileSessions([legacySession]);
-            setActiveReconcileSessionId(legacySession.id);
-          }
-        }
       } catch {
         setEvents(starterEvents);
         setMessages(starterMessages);
         setPartnerProfile(starterPartnerProfile);
         setFuturePlans(starterFuturePlans);
-        setReconcileSessions(starterReconcileSessions);
         setRoomSettings(defaultRoomSettings);
       } finally {
         setLocalHydrated(true);
@@ -660,11 +491,6 @@ export default function Home() {
     if (!localHydrated) return;
     window.localStorage.setItem(futurePlanStorageKey, JSON.stringify(futurePlans));
   }, [futurePlans, localHydrated]);
-
-  useEffect(() => {
-    if (!localHydrated) return;
-    window.localStorage.setItem(reconcileSessionStorageKey, JSON.stringify(reconcileSessions));
-  }, [localHydrated, reconcileSessions]);
 
   useEffect(() => {
     if (!localHydrated) return;
@@ -698,21 +524,6 @@ export default function Home() {
           setRoomSettings(normalizeRoomSettings(payload.roomSettings));
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
-          const nextSessions = payload.reconcileSessions?.length
-            ? payload.reconcileSessions
-            : payload.reconcileChats?.length
-              ? [
-                  {
-                    id: 'session-legacy',
-                    title: '之前的和好聊天',
-                    createdAt: payload.reconcileChats[0]?.createdAt || toDateTimeLocal(new Date()),
-                    updatedAt: payload.reconcileChats.at(-1)?.createdAt || toDateTimeLocal(new Date()),
-                    messages: payload.reconcileChats,
-                  },
-                ]
-              : starterReconcileSessions;
-          setReconcileSessions(nextSessions);
-          setActiveReconcileSessionId((current) => nextSessions.some((session) => session.id === current) ? current : nextSessions[0].id);
           setSelectedId(payload.events[0]?.id ?? starterEvents[0].id);
         }
 
@@ -755,7 +566,7 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ roomSettings, events, messages, reconcileSessions, partnerProfile, futurePlans }),
+        body: JSON.stringify({ roomSettings, events, messages, partnerProfile, futurePlans }),
       })
         .then((response) => {
           if (!response.ok) throw new Error('保存失败');
@@ -775,7 +586,7 @@ export default function Home() {
         window.clearTimeout(saveTimerRef.current);
       }
     };
-  }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, reconcileSessions, roomSettings]);
+  }, [cloudHydrated, events, futurePlans, localHydrated, messages, partnerProfile, roomSettings]);
 
   useEffect(() => {
     if (!cloudHydrated) return;
@@ -798,23 +609,15 @@ export default function Home() {
           }
           setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
           setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
-          if (payload.reconcileSessions?.length) {
-            setReconcileSessions((current) => mergeReconcileSessionDirectory(current, payload.reconcileSessions || []));
-            setActiveReconcileSessionId((current) =>
-              payload.reconcileSessions?.some((session) => session.id === current)
-                ? current
-                : payload.reconcileSessions?.[0]?.id || starterReconcileSessions[0].id,
-            );
-          }
         })
         .catch(() => undefined);
     };
 
     syncSharedMemory();
-    const timer = window.setInterval(syncSharedMemory, activeTab === 'map' && reconcileScreen === 'room' ? 2500 : 6000);
+    const timer = window.setInterval(syncSharedMemory, 6000);
 
     return () => window.clearInterval(timer);
-  }, [activeTab, cloudHydrated, cloudStatus, homeComposer, reconcileScreen]);
+  }, [cloudHydrated, cloudStatus, homeComposer]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date().getTime()), 60000);
@@ -911,100 +714,6 @@ export default function Home() {
     if (futureView === 'open') return item.status !== 'done';
     return true;
   });
-  const activeReconcileSession =
-    reconcileSessions.find((session) => session.id === activeReconcileSessionId) ?? reconcileSessions[0] ?? starterReconcileSessions[0];
-  const reconcileChatMessages = activeReconcileSession.messages;
-
-  useEffect(() => {
-    if (activeTab !== 'map' || reconcileScreen !== 'room' || !activeReconcileSessionId) return;
-    let cancelled = false;
-
-    const applyPayload = (payload: ReconcileChatSyncPayload) => {
-      if (!payload.initialized || cancelled) return;
-      setReconcileSessions((current) => current.map((session) => {
-        if (session.id !== activeReconcileSessionId) return session;
-        const remoteIds = new Set(payload.messages.map((message) => message.id));
-        const pendingMessages = session.messages.filter(
-          (message) => pendingChatMessageIdsRef.current.has(message.id) && !remoteIds.has(message.id),
-        );
-        const nextMessages = sortReconcileMessages([...payload.messages, ...pendingMessages]);
-        const visibleMessages = nextMessages.length
-          ? nextMessages
-          : [{
-              id: `welcome-${session.id}-${payload.clearedAt || 'initial'}`,
-              role: 'bot' as const,
-              title: botName,
-              body: `我在这里陪你们慢慢说。你们可以切换 ${userAName} / ${userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
-              createdAt: payload.clearedAt || session.createdAt,
-            }];
-        const messagesUnchanged = JSON.stringify(session.messages) === JSON.stringify(visibleMessages);
-        if (messagesUnchanged && session.clearedAt === (payload.clearedAt || undefined)) return session;
-        return {
-          ...session,
-          clearedAt: payload.clearedAt || undefined,
-          updatedAt: visibleMessages.at(-1)?.createdAt || payload.clearedAt || session.updatedAt,
-          messages: visibleMessages,
-        };
-      }));
-    };
-
-    const syncChat = async () => {
-      if (chatSyncRequestRef.current || cancelled) return;
-      chatSyncRequestRef.current = true;
-      try {
-        const query = new URLSearchParams({ space: sharedRoomKey, session: activeReconcileSessionId });
-        const response = await fetch(`/api/reconcile-chat?${query.toString()}`, { cache: 'no-store' });
-        const contentType = response.headers.get('Content-Type') || '';
-        if (!response.ok || !contentType.includes('application/json')) throw new Error('聊天同步失败');
-        let payload = await response.json() as ReconcileChatSyncPayload;
-
-        if (!payload.initialized) {
-          const session = reconcileSessionsRef.current.find((item) => item.id === activeReconcileSessionId);
-          if (session?.messages.length) {
-            const bootstrapResponse = await fetch('/api/reconcile-chat', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'bootstrap',
-                space: sharedRoomKey,
-                sessionId: activeReconcileSessionId,
-                messages: session.messages,
-              }),
-            });
-            if (!bootstrapResponse.ok) throw new Error('聊天记录初始化失败');
-            payload = await bootstrapResponse.json() as ReconcileChatSyncPayload;
-          }
-        }
-
-        applyPayload(payload);
-      } catch {
-        // Keep the local conversation visible while the network is temporarily unavailable.
-      } finally {
-        chatSyncRequestRef.current = false;
-      }
-    };
-
-    void syncChat();
-    const timer = window.setInterval(syncChat, 1500);
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void syncChat();
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      chatSyncRequestRef.current = false;
-    };
-  }, [activeReconcileSessionId, activeTab, reconcileScreen, userAName, userBName]);
-
-  function getRoleName(role: ReconcileRoomRole) {
-    if (role === 'userA') return userAName;
-    if (role === 'userB') return userBName;
-    return botName;
-  }
-
   function getOwnerLabel(owner: PartnerProfileOwner) {
     if (owner === 'userA') return userAName;
     if (owner === 'userB') return userBName;
@@ -1017,16 +726,6 @@ export default function Home() {
     return '我们';
   }
 
-  function createWelcomeChat(createdAt: string): ReconcileChatMessage {
-    return {
-      id: crypto.randomUUID(),
-      role: 'bot',
-      title: botName,
-      body: `我在这里陪你们慢慢说。你们可以切换 ${userAName} / ${userBName} 发言；聊到一半时，点“${botName} 总结一下”，我会只根据上面的对话帮你们降温、找重点、给出更好开口的话。`,
-      createdAt,
-    };
-  }
-
   function toggleMusic() {
     if (musicPlaying) {
       setMusicEnabled(false);
@@ -1037,44 +736,6 @@ export default function Home() {
 
     setMusicEnabled(true);
     void startMusic();
-  }
-
-  function getSessionPreview(session: ReconcileSession) {
-    const lastMessage = session.messages.at(-1);
-    if (!lastMessage) return '还没有开始聊天';
-    const speaker = getRoleName(lastMessage.role);
-    return `${speaker}：${lastMessage.body}`;
-  }
-
-  function updateActiveReconcileSession(updater: (session: ReconcileSession) => ReconcileSession) {
-    setReconcileSessions((current) =>
-      current.map((session) => session.id === activeReconcileSession.id ? updater(session) : session),
-    );
-  }
-
-  function createReconcileSession() {
-    const now = toDateTimeLocal(new Date());
-    const id = crypto.randomUUID();
-    const session: ReconcileSession = {
-      id,
-      title: '新的和好房间',
-      createdAt: now,
-      updatedAt: now,
-      messages: [createWelcomeChat(now)],
-    };
-
-    setReconcileSessions((current) => [session, ...current]);
-    setActiveReconcileSessionId(id);
-    setReconcileChatInput('');
-    setAgentError('');
-    setReconcileScreen('room');
-  }
-
-  function openReconcileSession(id: string) {
-    setActiveReconcileSessionId(id);
-    setReconcileChatInput('');
-    setAgentError('');
-    setReconcileScreen('room');
   }
 
   const stopAudioNodes = useCallback(() => {
@@ -1393,212 +1054,16 @@ export default function Home() {
     setMessages((current) => current.filter((message) => message.id !== id));
   }
 
-  async function requestReconcileAnalysis(conflict: string) {
-    const response = await fetch('/api/reconcile-agent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        conflict,
-        tone: 'soft',
-        mood: '想和好',
-        events: events.slice(0, 12).map((item) => ({
-          title: item.title,
-          date: item.date,
-          category: item.category,
-          note: item.note,
-        })),
-        messages: messages.slice(0, 12).map((item) => ({
-          kind: item.kind,
-          title: item.title,
-          body: item.body,
-        })),
-      }),
-    });
-
-    const contentType = response.headers.get('Content-Type') || '';
-    if (!contentType.includes('application/json')) {
-      throw new Error('当前预览没有启动智能体接口。请用 netlify dev 本地联调，或部署到 Netlify 后再测试。');
-    }
-
-    const payload = await response.json() as Partial<ReconcileResult> & { error?: string };
-    if (!response.ok) throw new Error(payload.error || '智能体暂时没有回应');
-
-    const nextResult = {
-      answer: payload.answer || reconcileResult.answer,
-      sharedCore: payload.sharedCore || reconcileResult.sharedCore,
-      trigger: payload.trigger || reconcileResult.trigger,
-      needs: payload.needs || reconcileResult.needs,
-      myNeed: payload.myNeed || reconcileResult.myNeed,
-      partnerNeed: payload.partnerNeed || reconcileResult.partnerNeed,
-      avoidNow: payload.avoidNow || reconcileResult.avoidNow,
-      gentleScript: payload.gentleScript || reconcileResult.gentleScript,
-      repairAdvice: payload.repairAdvice || reconcileResult.repairAdvice,
-      shortReply: payload.shortReply || reconcileResult.shortReply,
-      sincereReply: payload.sincereReply || reconcileResult.sincereReply,
-      cuteReply: payload.cuteReply || reconcileResult.cuteReply,
-      repairPlan: payload.repairPlan || reconcileResult.repairPlan,
-      nextStep: payload.nextStep || reconcileResult.nextStep,
-    };
-
-    setReconcileResult(nextResult);
-    return nextResult;
-  }
-
-  async function postReconcileChat(payload: Record<string, unknown>) {
-    let lastError: unknown;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const response = await fetch('/api/reconcile-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ space: sharedRoomKey, ...payload }),
-        });
-        const contentType = response.headers.get('Content-Type') || '';
-        if (!contentType.includes('application/json')) throw new Error('聊天接口尚未部署');
-        const result = await response.json() as { ok?: boolean; message?: ReconcileChatMessage; clearedAt?: string; error?: string };
-        if (!response.ok) throw new Error(result.error || '聊天服务暂时不可用');
-        return result;
-      } catch (error) {
-        lastError = error;
-        if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error('聊天服务暂时不可用');
-  }
-
-  async function persistReconcileMessage(sessionId: string, message: ReconcileChatMessage) {
-    try {
-      const result = await postReconcileChat({ action: 'send', sessionId, message });
-      const savedMessage = result.message;
-      if (!savedMessage) throw new Error('聊天服务没有返回消息');
-      pendingChatMessageIdsRef.current.delete(message.id);
-      setReconcileSessions((current) => current.map((session) => {
-        if (session.id !== sessionId) return session;
-        const withoutLocalCopy = session.messages.filter((item) => item.id !== message.id);
-        return {
-          ...session,
-          updatedAt: savedMessage.createdAt,
-          messages: sortReconcileMessages([...withoutLocalCopy, savedMessage]),
-        };
-      }));
-    } catch (error) {
-      setAgentError(`${error instanceof Error ? error.message : '消息发送失败'}，消息已保留在本机，请稍后再发送。`);
-    }
-  }
-
-  function sendReconcileMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const body = reconcileChatInput.trim();
-    if (!body) return;
-    setAgentError('');
-    const now = toDateTimeLocal(new Date());
-    const sessionId = activeReconcileSession.id;
-    const message: ReconcileChatMessage = {
-      id: crypto.randomUUID(),
-      role: reconcileSpeaker,
-      body,
-      createdAt: now,
-    };
-    pendingChatMessageIdsRef.current.add(message.id);
-    updateActiveReconcileSession((session) => {
-      const messages = [...session.messages, message];
-      const humanCount = messages.filter((message) => message.role !== 'bot').length;
-      return {
-        ...session,
-        title: session.title === '新的和好房间' && humanCount === 1 ? body.slice(0, 14) || session.title : session.title,
-        updatedAt: now,
-        messages,
-      };
-    });
-    setReconcileChatInput('');
-    void persistReconcileMessage(sessionId, message);
-  }
-
-  async function summarizeReconcileChat() {
-    const humanMessages = activeReconcileSession.messages.filter((message) => message.role !== 'bot');
-    if (!humanMessages.length || agentLoading) {
-      setAgentError(`先让 ${userAName} 和 ${userBName} 说几句，${botName} 才知道怎么帮你们。`);
-      return;
-    }
-
-    const transcript = humanMessages
-      .slice(-40)
-      .map((message) => `${getRoleName(message.role)}：${message.body}`)
-      .join('\n');
-
-    setAgentLoading(true);
-    setAgentError('');
-
-    try {
-      const result = await requestReconcileAnalysis(
-        `下面是情侣吵架聊天室里的对话。请你作为第三方智能调停机器人，像自然聊天一样总结双方真正想表达的内容，指出误会可能在哪里，给出现在最适合的一步，并生成一段其中一方可以温柔发给对方的话。\n\n${transcript}`,
-      );
-      const now = toDateTimeLocal(new Date());
-      const sessionId = activeReconcileSession.id;
-      const botMessage: ReconcileChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'bot',
-        title: botName,
-        body: result.answer || result.repairAdvice,
-        createdAt: now,
-      };
-      pendingChatMessageIdsRef.current.add(botMessage.id);
-      updateActiveReconcileSession((session) => ({
-        ...session,
-        updatedAt: now,
-        messages: [...session.messages, botMessage],
-      }));
-      void persistReconcileMessage(sessionId, botMessage);
-    } catch (error) {
-      setAgentError(error instanceof Error ? error.message : '智能体暂时不可用，请稍后再试');
-    } finally {
-      setAgentLoading(false);
-    }
-  }
-
-  async function resetReconcileChat() {
-    const now = toDateTimeLocal(new Date());
-    const sessionId = activeReconcileSession.id;
-    pendingChatMessageIdsRef.current.clear();
-    updateActiveReconcileSession((session) => ({
-      ...session,
-      updatedAt: now,
-      clearedAt: now,
-      messages: [{ ...createWelcomeChat(now), id: `welcome-${session.id}-${now}` }],
-    }));
-    setReconcileChatInput('');
-    setAgentError('');
-    try {
-      const result = await postReconcileChat({ action: 'clear', sessionId });
-      const clearedAt = result.clearedAt;
-      if (!clearedAt) throw new Error('聊天服务没有确认清空');
-      setReconcileSessions((current) => current.map((session) => session.id === sessionId
-        ? {
-            ...session,
-            clearedAt,
-            updatedAt: clearedAt,
-            messages: [{ ...createWelcomeChat(clearedAt), id: `welcome-${session.id}-${clearedAt}` }],
-          }
-        : session));
-    } catch (error) {
-      setAgentError(`${error instanceof Error ? error.message : '清空失败'}，请检查网络后重试。`);
-    }
-  }
-
   const pageTitle =
-    activeTab === 'timeline' ? '时间轴' : activeTab === 'letters' ? '信件' : activeTab === 'map' ? '和好智能体' : activeTab === 'more' ? '家' : '爱的地图';
+    activeTab === 'timeline' ? '时间轴' : activeTab === 'letters' ? '信件' : activeTab === 'more' ? '家' : '爱的地图';
   const pageSubtitle =
     activeTab === 'timeline'
       ? `${events.length} 个共同回忆`
       : activeTab === 'letters'
         ? '悄悄话与时光胶囊'
-        : activeTab === 'map'
-          ? '不评判，只帮你们靠近'
-          : activeTab === 'more'
-            ? '我们的房间与同步设置'
-            : '记录属于我们的甜蜜回忆';
+        : activeTab === 'more'
+          ? '我们的房间与同步设置'
+          : '记录属于我们的甜蜜回忆';
 
   function renderPhotoPicker(
     label: string,
@@ -1645,9 +1110,7 @@ export default function Home() {
             <p>{pageSubtitle}</p>
           </div>
           {activeTab === 'timeline' ? (
-            <button className="round-menu" type="button" aria-label="时间轴菜单">
-              ≡
-            </button>
+            <button className="round-menu" type="button" aria-label="时间轴菜单">≡</button>
           ) : activeTab === 'letters' ? (
             <button
               className="round-menu soft-heart"
@@ -1677,615 +1140,93 @@ export default function Home() {
         </header>
 
         {activeTab === 'timeline' ? (
-          <section className="timeline-view" aria-label="时间轴">
-            <button
-              className="sort-chip"
-              type="button"
-              onClick={() => setOldestFirst((value) => !value)}
-            >
-              {oldestFirst ? '最早在前' : '最新在前'}
-            </button>
-
-            <div className="timeline-rail">
-              {timelineGroups.map((group) => (
-                <section className="month-group" key={group.month}>
-                  <div className="month-chip">
-                    <span>▣</span>
-                    {group.month}
-                  </div>
-                  {group.items.map((event) => (
-                    <article
-                      className={event.id === selectedId ? 'timeline-memory selected' : 'timeline-memory'}
-                      key={event.id}
-                      onClick={() => setSelectedId(event.id)}
-                    >
-                      <i className="timeline-dot" />
-                      <p>{formatFullChineseDate(event.originalDate)}</p>
-                      <h2>
-                        <span>•</span>
-                        {event.title}
-                        <em> · {event.category}</em>
-                      </h2>
-                      <div className={`memory-photo ${event.imageClass}`}>
-                        {event.photos?.[0] ? (
-                          <img src={event.photos[0].url} alt={event.title} />
-                        ) : (
-                          <strong>{event.emoji}</strong>
-                        )}
-                      </div>
-                      <footer>
-                        <span>{event.category}</span>
-                        <small>{event.daysPassed} 天</small>
-                        <button
-                          type="button"
-                          aria-label={`删除 ${event.title}`}
-                          onClick={(clickEvent) => {
-                            clickEvent.stopPropagation();
-                            removeEvent(event.id);
-                          }}
-                        >
-                          删除
-                        </button>
-                      </footer>
-                    </article>
-                  ))}
-                </section>
-              ))}
-            </div>
-          </section>
+          <Suspense fallback={<section className="tab-loading">正在打开时间轴...</section>}>
+            <TimelineTab
+              groups={timelineGroups}
+              oldestFirst={oldestFirst}
+              selectedId={selectedId}
+              onToggleOrder={() => setOldestFirst((value) => !value)}
+              onSelect={setSelectedId}
+              onRemove={removeEvent}
+            />
+          </Suspense>
         ) : activeTab === 'letters' ? (
-          <section className="letters-view" aria-label="悄悄话和时光胶囊">
-            <div className="message-tabs">
-              <button
-                type="button"
-                className={messageKind === 'whisper' ? 'active' : ''}
-                onClick={() => {
-                  setMessageKind('whisper');
-                  setDeliveryMode('now');
-                }}
-              >
-                💌 悄悄话
-              </button>
-              <button
-                type="button"
-                className={messageKind === 'capsule' ? 'active' : ''}
-                onClick={() => {
-                  setMessageKind('capsule');
+          <Suspense fallback={<section className="tab-loading">正在打开信箱...</section>}>
+            <LettersTab
+              messageKind={messageKind}
+              composeOpen={composeOpen}
+              messageTo={messageTo}
+              messageTitle={messageTitle}
+              messageBody={messageBody}
+              deliveryMode={deliveryMode}
+              openAt={openAt}
+              capsuleEventId={capsuleEventId}
+              locationName={locationName}
+              arrivedLocation={arrivedLocation}
+              events={events}
+              lockedCapsules={lockedCapsules}
+              openMessages={openMessages}
+              userBName={userBName}
+              photoPicker={renderPhotoPicker('附加照片', 'message', messagePhotos, setMessagePhotos)}
+              onKindChange={(kind) => {
+                setMessageKind(kind);
+                if (kind === 'whisper') setDeliveryMode('now');
+                else {
                   setDeliveryMode('anniversary');
                   setMessageTo('未来的我们');
-                }}
-              >
-                ⏳ 时光胶囊
-              </button>
-            </div>
-
-            {composeOpen && (
-              <form className="message-composer" onSubmit={sendMessage}>
-                <label>
-                  收给谁
-                  <input value={messageTo} onChange={(event) => setMessageTo(event.target.value)} placeholder={`${userBName} / 未来的我们`} />
-                </label>
-                <label>
-                  标题
-                  <input value={messageTitle} onChange={(event) => setMessageTitle(event.target.value)} placeholder="例如：见面那天再看" />
-                </label>
-                <label>
-                  内容
-                  <textarea value={messageBody} onChange={(event) => setMessageBody(event.target.value)} placeholder="写一封小纸条给 TA 吧" />
-                </label>
-                {renderPhotoPicker('附加照片', 'message', messagePhotos, setMessagePhotos)}
-
-                {messageKind === 'capsule' && (
-                  <div className="delivery-grid">
-                    {([
-                        ['anniversary', '纪念日'],
-                        ['meeting', '下次见面'],
-                        ['location', '到达地点'],
-                        ['scheduled', '指定时间'],
-                      ] as [DeliveryMode, string][]).map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        className={deliveryMode === mode ? 'active' : ''}
-                        onClick={() => setDeliveryMode(mode)}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {messageKind === 'capsule' && deliveryMode === 'scheduled' && (
-                  <label>
-                    开启时间
-                    <input type="datetime-local" value={openAt} onChange={(event) => setOpenAt(event.target.value)} />
-                  </label>
-                )}
-
-                {messageKind === 'capsule' && deliveryMode === 'anniversary' && (
-                  <label>
-                    到哪个纪念日打开
-                    <select value={capsuleEventId} onChange={(event) => setCapsuleEventId(event.target.value)}>
-                      {events.map((event) => (
-                        <option value={event.id} key={event.id}>
-                          {event.title}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-
-                {messageKind === 'capsule' && deliveryMode === 'location' && (
-                  <label>
-                    地点暗号
-                    <input value={locationName} onChange={(event) => setLocationName(event.target.value)} placeholder="例如：上海虹桥站" />
-                  </label>
-                )}
-
-                <button className="send-button" type="submit">
-                  {messageKind === 'capsule' ? '封存胶囊' : '写到共同信箱'}
-                </button>
-              </form>
-            )}
-
-            {messageKind === 'capsule' && (
-              <section className="arrival-card">
-                <div>
-                  <p>开启条件</p>
-                  <span>输入“下次见面”或地点暗号，可打开对应胶囊。</span>
-                </div>
-                <input value={arrivedLocation} onChange={(event) => setArrivedLocation(event.target.value)} placeholder="下次见面 / 上海虹桥站" />
-              </section>
-            )}
-
-            {messageKind === 'capsule' && (
-              <section className="mail-section waiting-section">
-                <h2>等待开启</h2>
-                {lockedCapsules.length === 0 ? (
-                  <article className="empty-mail-card">
-                    <span>♥</span>
-                    <strong>暂时没有待开启的胶囊</strong>
-                    <p>把一句话封存到未来吧</p>
-                  </article>
-                ) : (
-                  lockedCapsules.map((message) => (
-                    <article className="letter-card unread" key={message.id}>
-                      <div className="letter-meta">
-                        <span>未</span>
-                        <strong>{message.to} 收</strong>
-                        <time>{getMessageStatus(message)}</time>
-                      </div>
-                      <h3>{message.title}</h3>
-                      <p>还没到约定的打开时刻。</p>
-                    </article>
-                  ))
-                )}
-              </section>
-            )}
-
-            <section className="mail-section read-section">
-              <h2>{messageKind === 'whisper' ? '共同信箱' : '已开启胶囊'}</h2>
-              <div className="letter-list">
-                {openMessages.length === 0 && (
-                  <article className="empty-mail-card">
-                    <span>♥</span>
-                    <strong>
-                      {messageKind === 'whisper' ? '还没有悄悄话' : '还没有已开启的胶囊'}
-                    </strong>
-                    <p>{messageKind === 'whisper' ? '写完就会直接出现在这里' : '到了约定条件后会自动出现'}</p>
-                  </article>
-                )}
-                {openMessages.map((message) => (
-                  <article className={message.kind === 'capsule' ? 'letter-card capsule' : 'letter-card'} key={message.id}>
-                    <div className="letter-meta">
-                      <span>{message.to.includes('未来') ? '未' : message.to.slice(0, 1) || 'TA'}</span>
-                      <strong>{message.to} 收</strong>
-                      <time>{message.createdAt.slice(5, 10).replace('-', '月')}日</time>
-                    </div>
-                    <h3>{message.title}</h3>
-                    <p>{message.body}</p>
-                    {message.photos?.length ? (
-                      <div className="letter-photo-grid">
-                        {message.photos.slice(0, 3).map((photo) => (
-                          <img src={photo.url} alt={photo.name || message.title} key={photo.id} />
-                        ))}
-                      </div>
-                    ) : message.kind === 'whisper' && message.body.length > 8 && (
-                      <div className="letter-photo" aria-hidden="true" />
-                    )}
-                    <button type="button" aria-label={`删除 ${message.title}`} onClick={() => removeMessage(message.id)}>
-                      删除
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </section>
-        ) : activeTab === 'map' ? (
-          <section className="reconcile-view" aria-label="情侣吵架分析智能体">
-            {reconcileScreen === 'sessions' ? (
-              <section className="reconcile-session-hub" aria-label="和好会话列表">
-                <section className="session-hero-card">
-                  <div>
-                    <span>桃桃聊天室</span>
-                    <h2>把话说开</h2>
-                    <p>每一次愿意沟通，都会被好好保存。</p>
-                  </div>
-                </section>
-
-                <button className="new-session-card" type="button" onClick={createReconcileSession}>
-                  <span>＋</span>
-                  <div>
-                    <strong>新建和好房间</strong>
-                    <p>{userAName}、{userBName} 和 {botName} 一起慢慢聊</p>
-                  </div>
-                  <em>›</em>
-                </button>
-
-                <section className="session-list" aria-label="最近会话">
-                  <div className="section-title">
-                    <div>
-                      <p>最近会话</p>
-                      <h2>继续上一次没有说完的话</h2>
-                    </div>
-                  </div>
-                  {reconcileSessions.map((session) => (
-                    <article className="session-card" key={session.id}>
-                      <button type="button" onClick={() => openReconcileSession(session.id)}>
-                        <div>
-                          <h3>{session.title}</h3>
-                          <time>{session.updatedAt.slice(0, 10)}</time>
-                        </div>
-                        <div className="session-avatars" aria-hidden="true">
-                          <span> A </span>
-                          <span> B </span>
-                          <span>桃</span>
-                        </div>
-                        <p>{getSessionPreview(session)}</p>
-                        <strong>继续聊 ›</strong>
-                      </button>
-                    </article>
-                  ))}
-                </section>
-              </section>
-            ) : (
-            <section className="reconcile-chat-page" aria-label="和好三方聊天室">
-              <div className="room-back-row">
-                <button type="button" onClick={() => setReconcileScreen('sessions')} aria-label="返回会话列表">
-                  ‹ 会话
-                </button>
-                <span>{activeReconcileSession.title}</span>
-              </div>
-
-              <section className="repair-stage chat-stage" aria-label="三十秒降温">
-                <div className="repair-stage-copy">
-                  <span>{botName} 在房间里</span>
-                  <h2>慢慢说</h2>
-                  <p>{userAName} 和 {userBName} 都可以发言，需要时让 {botName} 总结。</p>
-                </div>
-                <div className="breathing-circle compact" aria-hidden="true">
-                  <strong>30</strong>
-                  <em>秒</em>
-                </div>
-              </section>
-
-              <div className="room-toolbar" aria-label="聊天室操作">
-                <div className="speaker-switch" aria-label="当前发言人">
-                  {([
-                    ['userA', userAName],
-                    ['userB', userBName],
-                  ] as const).map(([role, label]) => (
-                    <button
-                      key={role}
-                      type="button"
-                      className={reconcileSpeaker === role ? 'active' : ''}
-                      onClick={() => setReconcileSpeaker(role)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <button className="summarize-button" type="button" onClick={summarizeReconcileChat} disabled={agentLoading}>
-                  {agentLoading ? `${botName} 正在想` : `${botName} 总结一下`}
-                </button>
-              </div>
-
-              <div className="chat-thread room-thread" aria-live="polite">
-                {reconcileChatMessages.map((message) => (
-                  <article className={`chat-bubble ${message.role}`} key={message.id}>
-                    <span>
-                      {message.role === 'bot' ? message.title || botName : getRoleName(message.role)}
-                    </span>
-                    <p>{message.body}</p>
-                  </article>
-                ))}
-                {agentLoading && (
-                  <article className="chat-bubble bot typing">
-                    <span>{botName}</span>
-                    <p>我在读你们刚才说的话，先帮你们把情绪和真正想表达的意思分开。</p>
-                  </article>
-                )}
-              </div>
-
-              <div className="suggestion-row" aria-label="快捷输入">
-                {['我现在有点委屈', '我不是不在乎你', '我们能不能慢慢说'].map((text) => (
-                  <button key={text} type="button" onClick={() => setReconcileChatInput(text)}>
-                    {text}
-                  </button>
-                ))}
-              </div>
-
-              {agentError && <p className="agent-error">{agentError}</p>}
-              <form className="chat-input-bar" onSubmit={sendReconcileMessage}>
-                <input
-                  value={reconcileChatInput}
-                  onChange={(event) => setReconcileChatInput(event.target.value)}
-                  placeholder={`${getRoleName(reconcileSpeaker)} 说点什么...`}
-                  aria-label="聊天室发言"
-                />
-                <button type="submit" disabled={!reconcileChatInput.trim()}>
-                  发送
-                </button>
-              </form>
-
-              <button className="clear-room-button" type="button" onClick={resetReconcileChat}>
-                清空并重新聊
-              </button>
-            </section>
-            )}
-          </section>
+                }
+              }}
+              onToChange={setMessageTo}
+              onTitleChange={setMessageTitle}
+              onBodyChange={setMessageBody}
+              onDeliveryModeChange={setDeliveryMode}
+              onOpenAtChange={setOpenAt}
+              onCapsuleEventChange={setCapsuleEventId}
+              onLocationNameChange={setLocationName}
+              onArrivedLocationChange={setArrivedLocation}
+              onSubmit={sendMessage}
+              onRemove={removeMessage}
+              getMessageStatus={getMessageStatus}
+            />
+          </Suspense>
         ) : activeTab === 'more' ? (
-          <section className="settings-view" aria-label="家">
-            <section className="home-scene" aria-label="我们的房间">
-              <div className="home-scene-copy">
-                <p className="home-room-title">
-                  {roomDisplayName}
-                  <button type="button" onClick={() => setHomeComposer('room')} aria-label="编辑房间名称">
-                    ✎
-                  </button>
-                </p>
-                <em title={cloudMessage}><span className={`sync-dot ${cloudStatus}`} />{homeSyncLabel} · 两个人的爱都在这里</em>
-                <small>和你在一起，<br />就是最温暖的家。</small>
-              </div>
-            </section>
-
-            <section className="home-memory-card partner-profile-card" aria-label="双方性格爱好">
-              <div className="section-title">
-                <span className="home-section-icon">♥</span>
-                <div>
-                  <p>双方性格爱好</p>
-                  <h2>所有标签都可以自己定义</h2>
-                </div>
-                <button type="button" onClick={() => setHomeComposer('profile')}>
-                  ♡
-                </button>
-              </div>
-
-              <div className={profileExpanded ? 'tag-wall expanded' : 'tag-wall'}>
-                {visiblePartnerProfile.map((item, index) => (
-                  <button
-                    className={`couple-tag-note owner-${item.owner}`}
-                    style={{ '--tag-tilt': `${[-4, 3, -2, 4, -3, 2, -5, 3][index % 8]}deg` } as CSSProperties}
-                    type="button"
-                    key={item.id}
-                    onClick={() => {
-                      setProfileOwner(item.owner);
-                      setHomeComposer('profile');
-                    }}
-                  >
-                    <span>{getOwnerShort(item.owner)}</span>
-                    <strong>{item.label}</strong>
-                  </button>
-                ))}
-                <button
-                  className="add-tag-note more-tag-note"
-                  type="button"
-                  aria-expanded={profileExpanded}
-                  onClick={() => setProfileExpanded((value) => !value)}
-                >
-                  <span>{profileExpanded ? '⌃' : '⋯'}</span>
-                  {profileExpanded ? '收起' : '更多'}
-                </button>
-                <p>不同的我们，<br />更完整的爱。</p>
-              </div>
-            </section>
-
-            <section className="home-memory-card future-plan-card" aria-label="未来想一起做">
-              <div className="section-title">
-                <span className="home-section-icon star">★</span>
-                <div>
-                  <p>未来想一起做</p>
-                  <h2>把想做的事，一件件变成我们的回忆。</h2>
-                </div>
-                <button type="button" onClick={() => setHomeComposer('future')}>
-                  ♡
-                </button>
-              </div>
-
-              <div className="future-filter" aria-label="未来计划筛选">
-                {([
-                  ['all', '全部'],
-                  ['open', '未做完'],
-                  ['done', '已做完'],
-                ] as [FuturePlanView, string][]).map(([view, label]) => (
-                  <button
-                    key={view}
-                    type="button"
-                    className={futureView === view ? 'active' : ''}
-                    onClick={() => setFutureView(view)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="future-list">
-                {visibleFuturePlans.length === 0 && (
-                  <article className="future-empty">
-                    {futureView === 'done' ? '还没有完成的愿望' : futureView === 'open' ? '暂时没有未完成的愿望' : '还没有写下想一起做的事'}
-                  </article>
-                )}
-                {visibleFuturePlans.slice(0, 3).map((item, index) => (
-                  <article className={`future-item ${item.status}`} key={item.id}>
-                    <button type="button" onClick={() => cycleFuturePlanStatus(item.id)} aria-label={`切换 ${item.title} 状态`}>
-                      {item.status === 'done' ? '✓' : ''}
-                    </button>
-                    <div className={`future-thumb thumb-${(index % 3) + 1}`}>
-                      {item.photos?.[0] && <img src={item.photos[0].url} alt={item.title} />}
-                    </div>
-                    <div>
-                      <h3>{item.title}</h3>
-                      {item.note && <p>{item.note}</p>}
-                    </div>
-                    <span>{item.occasion}</span>
-                    <em>›</em>
-                  </article>
-                ))}
-                {visibleFuturePlans.length > 3 && (
-                  <div className="future-extra-grid" aria-label="更多未来计划">
-                    {visibleFuturePlans.slice(3).map((item, index) => (
-                      <button
-                        className={`future-extra-card ${item.status}`}
-                        type="button"
-                        key={item.id}
-                        onClick={() => cycleFuturePlanStatus(item.id)}
-                        aria-label={`切换 ${item.title} 状态`}
-                      >
-                        <span className={`future-thumb thumb-${((index + 3) % 3) + 1}`}>
-                          {item.photos?.[0] && <img src={item.photos[0].url} alt={item.title} />}
-                        </span>
-                        <strong>{item.title}</strong>
-                        <em>{item.occasion}</em>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p className="future-signature">未来的每一件小事<br />都有你 ♡</p>
-            </section>
-
-            <button className="reset-wide-button" type="button" onClick={resetDemo}>
-              重置为示例内容
-            </button>
-
-            {homeComposer === 'room' && (
-              <div className="modal-backdrop" role="presentation">
-                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="编辑房间名称">
-                  <div className="section-title">
-                    <div>
-                      <p>我们的房间</p>
-                      <h2>改房间名称和两个人的名字</h2>
-                    </div>
-                    <button type="button" onClick={() => setHomeComposer(null)}>
-                      关闭
-                    </button>
-                  </div>
-                  <label>
-                    房间名称
-                    <input
-                      value={roomSettings.roomName}
-                      onChange={(event) => setRoomSettings((current) => ({ ...current, roomName: event.target.value }))}
-                      placeholder="例如：我们的小窝"
-                    />
-                  </label>
-                  <label>
-                    用户 A 名字
-                    <input
-                      value={roomSettings.userAName}
-                      onChange={(event) => setRoomSettings((current) => ({ ...current, userAName: event.target.value }))}
-                      placeholder="输入用户 A 的名字"
-                    />
-                  </label>
-                  <label>
-                    用户 B 名字
-                    <input
-                      value={roomSettings.userBName}
-                      onChange={(event) => setRoomSettings((current) => ({ ...current, userBName: event.target.value }))}
-                      placeholder="输入用户 B 的名字"
-                    />
-                  </label>
-                  <button className="save-button" type="button" onClick={() => setHomeComposer(null)}>
-                    保存设置
-                  </button>
-                </section>
-              </div>
-            )}
-
-            {homeComposer === 'profile' && (
-              <div className="modal-backdrop" role="presentation">
-                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加双方性格爱好标签">
-                  <div className="section-title">
-                    <div>
-                      <p>双方性格爱好</p>
-                      <h2>添加一个自定义标签</h2>
-                    </div>
-                    <button type="button" onClick={() => setHomeComposer(null)}>
-                      关闭
-                    </button>
-                  </div>
-                  <form onSubmit={addPartnerProfileItem}>
-                    <label>
-                      归属
-                      <select value={profileOwner} onChange={(event) => setProfileOwner(event.target.value as PartnerProfileOwner)}>
-                        {(Object.keys(partnerOwnerMeta) as PartnerProfileOwner[]).map((owner) => (
-                          <option key={owner} value={owner}>{getOwnerLabel(owner)}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      标签
-                      <input value={profileLabel} onChange={(event) => setProfileLabel(event.target.value)} placeholder="例如：慢热 / 爱拍照 / 喜欢散步" />
-                    </label>
-                    <button className="save-button" type="submit">
-                      保存标签
-                    </button>
-                  </form>
-                </section>
-              </div>
-            )}
-
-            {homeComposer === 'future' && (
-              <div className="modal-backdrop" role="presentation">
-                <section className="composer-card modal-card" role="dialog" aria-modal="true" aria-label="添加未来想一起做的事情">
-                  <div className="section-title">
-                    <div>
-                      <p>未来想一起做</p>
-                      <h2>把一个小愿望放进家里</h2>
-                    </div>
-                    <button type="button" onClick={() => setHomeComposer(null)}>
-                      关闭
-                    </button>
-                  </div>
-                  <form onSubmit={addFuturePlanItem}>
-                    <label>
-                      想做的事
-                      <input value={futureTitle} onChange={(event) => setFutureTitle(event.target.value)} placeholder="例如：一周年去海边" />
-                    </label>
-                    <label>
-                      场景
-                      <input value={futureOccasion} onChange={(event) => setFutureOccasion(event.target.value)} placeholder="一周年 / 下次见面 / 某个周末" />
-                    </label>
-                    <label>
-                      状态
-                      <select value={futureStatus} onChange={(event) => setFutureStatus(event.target.value as FuturePlanStatus)}>
-                        {(Object.entries(futureStatusMeta) as [FuturePlanStatus, { label: string; icon: string }][]).map(([status, meta]) => (
-                          <option key={status} value={status}>{meta.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      小备注
-                      <textarea value={futureNote} onChange={(event) => setFutureNote(event.target.value)} placeholder="写一句为什么想一起做" />
-                    </label>
-                    {renderPhotoPicker('愿望配图', 'future', futurePhotos, setFuturePhotos)}
-                    <button className="save-button" type="submit">
-                      保存未来清单
-                    </button>
-                  </form>
-                </section>
-              </div>
-            )}
-          </section>
+          <Suspense fallback={<section className="tab-loading">正在打开我们的家...</section>}>
+            <HouseTab
+              roomDisplayName={roomDisplayName}
+              roomSettings={roomSettings}
+              cloudMessage={cloudMessage}
+              cloudStatus={cloudStatus}
+              homeSyncLabel={homeSyncLabel}
+              composer={homeComposer}
+              profileExpanded={profileExpanded}
+              visiblePartnerProfile={visiblePartnerProfile}
+              profileOwner={profileOwner}
+              profileLabel={profileLabel}
+              futureView={futureView}
+              visibleFuturePlans={visibleFuturePlans}
+              futureTitle={futureTitle}
+              futureOccasion={futureOccasion}
+              futureStatus={futureStatus}
+              futureNote={futureNote}
+              futurePhotoPicker={renderPhotoPicker('愿望配图', 'future', futurePhotos, setFuturePhotos)}
+              onComposerChange={setHomeComposer}
+              onRoomSettingsChange={setRoomSettings}
+              onProfileExpandedChange={setProfileExpanded}
+              onProfileOwnerChange={setProfileOwner}
+              onProfileLabelChange={setProfileLabel}
+              onProfileSubmit={addPartnerProfileItem}
+              onFutureViewChange={setFutureView}
+              onFutureStatusToggle={cycleFuturePlanStatus}
+              onFutureTitleChange={setFutureTitle}
+              onFutureOccasionChange={setFutureOccasion}
+              onFutureStatusChange={setFutureStatus}
+              onFutureNoteChange={setFutureNote}
+              onFutureSubmit={addFuturePlanItem}
+              onReset={resetDemo}
+              getOwnerLabel={getOwnerLabel}
+              getOwnerShort={getOwnerShort}
+            />
+          </Suspense>
         ) : (
           <>
             <section className="mood-card" aria-label="今日心情">

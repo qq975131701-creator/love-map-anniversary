@@ -39,26 +39,6 @@ type SecretMessage = {
   photos?: PhotoAttachment[];
 };
 
-type ReconcileRoomRole = 'userA' | 'userB' | 'bot';
-
-type ReconcileChatMessage = {
-  id: string;
-  role: ReconcileRoomRole;
-  title?: string;
-  body: string;
-  action?: string;
-  createdAt: string;
-};
-
-type ReconcileSession = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  clearedAt?: string;
-  messages: ReconcileChatMessage[];
-};
-
 type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 
 type PartnerProfileItem = {
@@ -90,8 +70,6 @@ type SharedMemoryData = {
   roomSettings: RoomSettings;
   events: Anniversary[];
   messages: SecretMessage[];
-  reconcileChats: ReconcileChatMessage[];
-  reconcileSessions: ReconcileSession[];
   partnerProfile: PartnerProfileItem[];
   futurePlans: FuturePlanItem[];
   updatedAt?: string;
@@ -222,48 +200,6 @@ function sanitizeMessages(value: unknown): SecretMessage[] {
   });
 }
 
-function sanitizeReconcileChats(value: unknown): ReconcileChatMessage[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.slice(-600).flatMap((item) => {
-    if (!isRecord(item)) return [];
-    const role = item.role === 'userB' ? 'userB' : item.role === 'bot' ? 'bot' : 'userA';
-    const body = sanitizeText(item.body, '', 4000);
-    if (!body) return [];
-
-    return [
-      {
-        id: sanitizeText(item.id, crypto.randomUUID(), 80),
-        role,
-        title: sanitizeText(item.title, role === 'bot' ? '桃桃' : '', 40) || undefined,
-        body,
-        action: sanitizeText(item.action, '', 800) || undefined,
-        createdAt: sanitizeText(item.createdAt, new Date().toISOString(), 30),
-      },
-    ];
-  });
-}
-
-function sanitizeReconcileSessions(value: unknown): ReconcileSession[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.slice(0, 80).flatMap((item) => {
-    if (!isRecord(item)) return [];
-    const messages = sanitizeReconcileChats(item.messages);
-
-    return [
-      {
-        id: sanitizeText(item.id, crypto.randomUUID(), 80),
-        title: sanitizeText(item.title, '新的和好房间', 80),
-        createdAt: sanitizeText(item.createdAt, messages[0]?.createdAt || new Date().toISOString(), 30),
-        updatedAt: sanitizeText(item.updatedAt, messages.at(-1)?.createdAt || new Date().toISOString(), 30),
-        clearedAt: sanitizeText(item.clearedAt, '', 30) || undefined,
-        messages,
-      },
-    ];
-  });
-}
-
 function sanitizePartnerProfile(value: unknown): PartnerProfileItem[] {
   if (!Array.isArray(value)) return [];
 
@@ -334,16 +270,11 @@ async function readSpace(space: string) {
       roomSettings: defaultRoomSettings,
       events: [],
       messages: [],
-      reconcileChats: [],
-      reconcileSessions: [],
       partnerProfile: [],
       futurePlans: [],
       updatedAt: null,
     };
   }
-
-  const reconcileSessions = sanitizeReconcileSessions(data.reconcileSessions);
-  const reconcileChats = sanitizeReconcileChats(data.reconcileChats);
 
   return {
     empty: false,
@@ -351,8 +282,6 @@ async function readSpace(space: string) {
     roomSettings: sanitizeRoomSettings(data.roomSettings),
     events: sanitizeEvents(data.events),
     messages: sanitizeMessages(data.messages),
-    reconcileChats,
-    reconcileSessions,
     partnerProfile: sanitizePartnerProfile(data.partnerProfile),
     futurePlans: sanitizeFuturePlans(data.futurePlans),
     updatedAt: sanitizeText(data.updatedAt, '', 40) || null,
@@ -369,8 +298,6 @@ async function writeSpace(space: string, payload: unknown) {
     roomSettings: sanitizeRoomSettings(payload.roomSettings),
     events: sanitizeEvents(payload.events),
     messages: sanitizeMessages(payload.messages),
-    reconcileChats: sanitizeReconcileChats(payload.reconcileChats),
-    reconcileSessions: sanitizeReconcileSessions(payload.reconcileSessions),
     partnerProfile: sanitizePartnerProfile(payload.partnerProfile),
     futurePlans: sanitizeFuturePlans(payload.futurePlans),
     updatedAt: new Date().toISOString(),
