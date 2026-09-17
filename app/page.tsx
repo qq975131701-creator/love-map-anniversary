@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- User-uploaded Blob photos are served through Netlify Functions in a static export. */
 import { ChangeEvent, FormEvent, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent } from 'react';
+import { optimizedPhotoUrl } from './components/photo-url';
 
 const TimelineTab = lazy(() => import('./components/TimelineTab'));
 const LettersTab = lazy(() => import('./components/LettersTab'));
@@ -351,6 +352,21 @@ function sameRoomSettings(left: RoomSettings, right: RoomSettings) {
   return left.roomName === right.roomName && left.userAName === right.userAName && left.userBName === right.userBName;
 }
 
+function deferBrowserWork(callback: () => void, timeout = 1200) {
+  const browserWindow = window as typeof window & {
+    requestIdleCallback?: (work: () => void, options?: { timeout: number }) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+
+  if (browserWindow.requestIdleCallback) {
+    const id = browserWindow.requestIdleCallback(callback, { timeout });
+    return () => browserWindow.cancelIdleCallback?.(id);
+  }
+
+  const id = window.setTimeout(callback, Math.min(timeout, 500));
+  return () => window.clearTimeout(id);
+}
+
 async function compressPhoto(file: File) {
   if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size < 450_000) return file;
 
@@ -474,27 +490,27 @@ export default function Home() {
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(storageKey, JSON.stringify(events));
+    return deferBrowserWork(() => window.localStorage.setItem(storageKey, JSON.stringify(events)));
   }, [events, localHydrated]);
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(messageStorageKey, JSON.stringify(messages));
+    return deferBrowserWork(() => window.localStorage.setItem(messageStorageKey, JSON.stringify(messages)));
   }, [localHydrated, messages]);
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(partnerProfileStorageKey, JSON.stringify(partnerProfile));
+    return deferBrowserWork(() => window.localStorage.setItem(partnerProfileStorageKey, JSON.stringify(partnerProfile)));
   }, [localHydrated, partnerProfile]);
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(futurePlanStorageKey, JSON.stringify(futurePlans));
+    return deferBrowserWork(() => window.localStorage.setItem(futurePlanStorageKey, JSON.stringify(futurePlans)));
   }, [futurePlans, localHydrated]);
 
   useEffect(() => {
     if (!localHydrated) return;
-    window.localStorage.setItem(roomSettingsStorageKey, JSON.stringify(roomSettings));
+    return deferBrowserWork(() => window.localStorage.setItem(roomSettingsStorageKey, JSON.stringify(roomSettings)));
   }, [localHydrated, roomSettings]);
 
   useEffect(() => {
@@ -502,43 +518,47 @@ export default function Home() {
     const normalizedSpace = sharedRoomKey;
     const controller = new AbortController();
 
-    queueMicrotask(() => {
+    const beginSync = () => {
       if (controller.signal.aborted) return;
       setCloudHydrated(false);
       setCloudStatus('loading');
       setCloudMessage('正在连接共同空间');
-    });
 
-    fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) throw new Error('共同空间连接失败');
-        return response.json() as Promise<SharedMemoryData>;
+      fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
+        cache: 'no-store',
+        signal: controller.signal,
       })
-      .then((payload) => {
-        if (!payload.empty) {
-          setEvents(normalizeEvents(payload.events));
-          setMessages(normalizeMessages(payload.messages));
-          setRoomSettings(normalizeRoomSettings(payload.roomSettings));
-          setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
-          setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
-          setSelectedId(payload.events[0]?.id ?? starterEvents[0].id);
-        }
+        .then(async (response) => {
+          if (!response.ok) throw new Error('共同空间连接失败');
+          return response.json() as Promise<SharedMemoryData>;
+        })
+        .then((payload) => {
+          if (!payload.empty) {
+            setEvents(normalizeEvents(payload.events));
+            setMessages(normalizeMessages(payload.messages));
+            setRoomSettings(normalizeRoomSettings(payload.roomSettings));
+            setPartnerProfile(payload.partnerProfile?.length ? normalizePartnerProfile(payload.partnerProfile) : starterPartnerProfile);
+            setFuturePlans(payload.futurePlans?.length ? normalizeFuturePlans(payload.futurePlans) : starterFuturePlans);
+            setSelectedId(payload.events[0]?.id ?? starterEvents[0].id);
+          }
 
-        setCloudHydrated(true);
-        setCloudStatus(payload.empty ? 'ready' : 'saved');
-        setCloudMessage(payload.empty ? '已创建共同空间，将自动保存' : '已同步共同空间');
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setCloudHydrated(false);
-        setCloudStatus('local');
-        setCloudMessage('当前使用本机数据，部署到 Netlify 后会自动同步');
-      });
+          setCloudHydrated(true);
+          setCloudStatus(payload.empty ? 'ready' : 'saved');
+          setCloudMessage(payload.empty ? '已创建共同空间，将自动保存' : '已同步共同空间');
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          setCloudHydrated(false);
+          setCloudStatus('local');
+          setCloudMessage('当前使用本机数据，部署到 Netlify 后会自动同步');
+        });
+    };
 
-    return () => controller.abort();
+    const cancelDeferredSync = deferBrowserWork(beginSync, 900);
+    return () => {
+      cancelDeferredSync();
+      controller.abort();
+    };
   }, [localHydrated]);
 
   useEffect(() => {
@@ -592,6 +612,7 @@ export default function Home() {
     if (!cloudHydrated) return;
 
     const syncSharedMemory = () => {
+      if (document.visibilityState !== 'visible') return;
       if (cloudStatus === 'saving' || savePendingRef.current) return;
       const normalizedSpace = sharedRoomKey;
       fetch(`/api/memories?space=${encodeURIComponent(normalizedSpace)}`, {
@@ -613,10 +634,16 @@ export default function Home() {
         .catch(() => undefined);
     };
 
-    syncSharedMemory();
-    const timer = window.setInterval(syncSharedMemory, 6000);
+    const timer = window.setInterval(syncSharedMemory, 15000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') syncSharedMemory();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [cloudHydrated, cloudStatus, homeComposer]);
 
   useEffect(() => {
@@ -759,7 +786,15 @@ export default function Home() {
   }, []);
 
   const startMusic = useCallback(async () => {
-    if (audioContextRef.current) return;
+    if (audioContextRef.current) {
+      try {
+        await audioContextRef.current.resume();
+        setMusicPlaying(audioContextRef.current.state === 'running');
+      } catch {
+        setMusicPlaying(false);
+      }
+      return;
+    }
     const AudioContextConstructor =
       window.AudioContext ||
       (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -812,12 +847,15 @@ export default function Home() {
 
   useEffect(() => {
     if (musicEnabled) {
-      void startMusic();
-    } else {
-      stopAudioNodes();
+      const cancelDeferredMusic = deferBrowserWork(() => void startMusic(), 1800);
+      return () => {
+        cancelDeferredMusic();
+        stopAudioNodes();
+      };
     }
 
-    return () => stopAudioNodes();
+    stopAudioNodes();
+    return undefined;
   }, [musicEnabled, startMusic, stopAudioNodes]);
 
   async function uploadPhoto(file: File) {
@@ -1089,7 +1127,7 @@ export default function Home() {
           <div className="photo-strip">
             {photos.map((photo) => (
               <figure className="photo-thumb" key={photo.id}>
-                <img src={photo.url} alt={photo.name || '上传的照片'} />
+                <img loading="lazy" decoding="async" src={optimizedPhotoUrl(photo.url, 180, 180)} alt={photo.name || '上传的照片'} />
                 <button type="button" onClick={() => setPhotos(photos.filter((item) => item.id !== photo.id))} aria-label={`移除 ${photo.name}`}>
                   ×
                 </button>

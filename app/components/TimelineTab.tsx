@@ -2,6 +2,8 @@
 
 /* eslint-disable @next/next/no-img-element -- Blob photos are already compressed and served by Netlify Functions. */
 
+import { optimizedPhotoUrl } from './photo-url';
+
 type TimelinePhoto = {
   id: string;
   url: string;
@@ -72,7 +74,7 @@ export default function TimelineTab({
                 </h2>
                 <div className={`memory-photo ${event.imageClass}`}>
                   {event.photos?.[0] ? (
-                    <img loading="lazy" decoding="async" src={event.photos[0].url} alt={event.title} />
+                    <img loading="lazy" decoding="async" src={optimizedPhotoUrl(event.photos[0].url, 800, 480)} alt={event.title} />
                   ) : (
                     <strong>{event.emoji}</strong>
                   )}

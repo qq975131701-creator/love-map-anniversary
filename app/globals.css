@@ -2493,6 +2493,13 @@ select:focus {
     padding: 20px 20px 0;
   }
 
+  .mood-card,
+  .map-card,
+  .milestone-card,
+  .composer-card {
+    backdrop-filter: none;
+  }
+
   .map-card {
     min-height: 540px;
   }
@@ -2509,6 +2516,17 @@ select:focus {
     margin-inline: -14px;
   }
 
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media (max-width: 390px) {

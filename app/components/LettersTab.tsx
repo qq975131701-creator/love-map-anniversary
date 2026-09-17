@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Blob photos are already compressed and served by Netlify Functions. */
 
 import type { FormEvent, ReactNode } from 'react';
+import { optimizedPhotoUrl } from './photo-url';
 
 type MessageKind = 'whisper' | 'capsule';
 type DeliveryMode = 'now' | 'scheduled' | 'anniversary' | 'meeting' | 'location';
@@ -186,7 +187,7 @@ export default function LettersTab(props: LettersTabProps) {
               {message.photos?.length ? (
                 <div className="letter-photo-grid">
                   {message.photos.slice(0, 3).map((photo) => (
-                    <img loading="lazy" decoding="async" src={photo.url} alt={photo.name || message.title} key={photo.id} />
+                    <img loading="lazy" decoding="async" src={optimizedPhotoUrl(photo.url, 360, 260)} alt={photo.name || message.title} key={photo.id} />
                   ))}
                 </div>
               ) : message.kind === 'whisper' && message.body.length > 8 && <div className="letter-photo" aria-hidden="true" />}

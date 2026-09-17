@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Blob photos are already compressed and served by Netlify Functions. */
 
 import type { CSSProperties, FormEvent, ReactNode } from 'react';
+import { optimizedPhotoUrl } from './photo-url';
 
 type PartnerProfileOwner = 'userA' | 'userB' | 'us';
 type FuturePlanStatus = 'todo' | 'planned' | 'done';
@@ -131,7 +132,7 @@ export default function HouseTab(props: HouseTabProps) {
             <article className={`future-item ${item.status}`} key={item.id}>
               <button type="button" onClick={() => onFutureStatusToggle(item.id)} aria-label={`切换 ${item.title} 状态`}>{item.status === 'done' ? '✓' : ''}</button>
               <div className={`future-thumb thumb-${(index % 3) + 1}`}>
-                {item.photos?.[0] && <img loading="lazy" decoding="async" src={item.photos[0].url} alt={item.title} />}
+                {item.photos?.[0] && <img loading="lazy" decoding="async" src={optimizedPhotoUrl(item.photos[0].url, 180, 180)} alt={item.title} />}
               </div>
               <div><h3>{item.title}</h3>{item.note && <p>{item.note}</p>}</div>
               <span>{item.occasion}</span><em>›</em>
@@ -142,7 +143,7 @@ export default function HouseTab(props: HouseTabProps) {
               {visibleFuturePlans.slice(3).map((item, index) => (
                 <button className={`future-extra-card ${item.status}`} type="button" key={item.id} onClick={() => onFutureStatusToggle(item.id)} aria-label={`切换 ${item.title} 状态`}>
                   <span className={`future-thumb thumb-${((index + 3) % 3) + 1}`}>
-                    {item.photos?.[0] && <img loading="lazy" decoding="async" src={item.photos[0].url} alt={item.title} />}
+                    {item.photos?.[0] && <img loading="lazy" decoding="async" src={optimizedPhotoUrl(item.photos[0].url, 180, 180)} alt={item.title} />}
                   </span>
                   <strong>{item.title}</strong><em>{item.occasion}</em>
                 </button>
