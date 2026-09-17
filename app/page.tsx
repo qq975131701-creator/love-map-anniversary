@@ -416,10 +416,7 @@ export default function Home() {
   const saveTimerRef = useRef<number | null>(null);
   const savePendingRef = useRef(false);
   const skipNextSaveRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioGainRef = useRef<GainNode | null>(null);
-  const audioNodesRef = useRef<OscillatorNode[]>([]);
-  const musicTimerRef = useRef<number | null>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const [musicEnabled, setMusicEnabled] = useState(true);
   const [musicPlaying, setMusicPlaying] = useState(false);
   const [messageKind, setMessageKind] = useState<MessageKind>('whisper');
@@ -756,7 +753,7 @@ export default function Home() {
   function toggleMusic() {
     if (musicPlaying) {
       setMusicEnabled(false);
-      stopAudioNodes();
+      stopMusic();
       setMusicPlaying(false);
       return;
     }
@@ -765,82 +762,27 @@ export default function Home() {
     void startMusic();
   }
 
-  const stopAudioNodes = useCallback(() => {
-    if (musicTimerRef.current) {
-      window.clearInterval(musicTimerRef.current);
-      musicTimerRef.current = null;
-    }
-    audioNodesRef.current.forEach((node) => {
-      try {
-        node.stop();
-      } catch {
-        // The oscillator may already be stopped by the browser.
-      }
-      node.disconnect();
-    });
-    audioNodesRef.current = [];
-    audioGainRef.current?.disconnect();
-    audioGainRef.current = null;
-    void audioContextRef.current?.close();
-    audioContextRef.current = null;
+  const stopMusic = useCallback(() => {
+    musicAudioRef.current?.pause();
+    setMusicPlaying(false);
   }, []);
 
   const startMusic = useCallback(async () => {
-    if (audioContextRef.current) {
-      try {
-        await audioContextRef.current.resume();
-        setMusicPlaying(audioContextRef.current.state === 'running');
-      } catch {
-        setMusicPlaying(false);
-      }
-      return;
+    if (!musicAudioRef.current) {
+      const audio = new Audio('/we-will-be-okay.mp3');
+      audio.loop = true;
+      audio.preload = 'none';
+      audio.volume = 0.2;
+      audio.addEventListener('pause', () => setMusicPlaying(false));
+      audio.addEventListener('play', () => setMusicPlaying(true));
+      musicAudioRef.current = audio;
     }
-    const AudioContextConstructor =
-      window.AudioContext ||
-      (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextConstructor) return;
-
-    const context = new AudioContextConstructor();
-    const gain = context.createGain();
-    gain.gain.value = 0.035;
-    gain.connect(context.destination);
-
-    const lead = context.createOscillator();
-    const harmony = context.createOscillator();
-    lead.type = 'sine';
-    harmony.type = 'triangle';
-    lead.frequency.value = 392;
-    harmony.frequency.value = 196;
-    lead.connect(gain);
-    harmony.connect(gain);
-    lead.start();
-    harmony.start();
-
-    audioContextRef.current = context;
-    audioGainRef.current = gain;
-    audioNodesRef.current = [lead, harmony];
-
-    const notes = [392, 440, 523.25, 493.88, 440, 392, 329.63, 349.23];
-    let index = 0;
-    const playStep = () => {
-      const now = context.currentTime;
-      const note = notes[index % notes.length];
-      lead.frequency.setTargetAtTime(note, now, 0.08);
-      harmony.frequency.setTargetAtTime(note / 2, now, 0.12);
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.setValueAtTime(gain.gain.value, now);
-      gain.gain.linearRampToValueAtTime(0.045, now + 0.18);
-      gain.gain.linearRampToValueAtTime(0.026, now + 0.9);
-      index += 1;
-    };
-
-    playStep();
-    musicTimerRef.current = window.setInterval(playStep, 950);
 
     try {
-      await context.resume();
-      setMusicPlaying(context.state === 'running');
+      await musicAudioRef.current.play();
+      setMusicPlaying(true);
     } catch {
+      // Mobile browsers may require the user to tap the music button first.
       setMusicPlaying(false);
     }
   }, []);
@@ -850,13 +792,13 @@ export default function Home() {
       const cancelDeferredMusic = deferBrowserWork(() => void startMusic(), 1800);
       return () => {
         cancelDeferredMusic();
-        stopAudioNodes();
+        stopMusic();
       };
     }
 
-    stopAudioNodes();
+    stopMusic();
     return undefined;
-  }, [musicEnabled, startMusic, stopAudioNodes]);
+  }, [musicEnabled, startMusic, stopMusic]);
 
   async function uploadPhoto(file: File) {
     const normalizedSpace = sharedRoomKey;
